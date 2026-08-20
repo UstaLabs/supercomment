@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>supercomment demo</title>
+
+<!-- FIRST thing in <head>: capture starts before any app code runs -->
+<script src="/supercomment.js" data-endpoint="/report" data-project="demo"></script>
+
+<style>
+  body{font:15px/1.6 ui-sans-serif,-apple-system,'Segoe UI',Roboto,sans-serif;
+       background:#0b0b0d;color:#e4e4e7;margin:0;padding:48px 24px;display:flex;justify-content:center}
+  main{max-width:640px;width:100%}
+  h1{color:#a78bfa;font-size:24px;margin:0 0 4px}
+  p.sub{color:#71717a;margin:0 0 28px}
+  .card{border:1px solid #27272a;background:#131316;border-radius:12px;padding:18px;margin-bottom:14px}
+  h2{font-size:15px;margin:0 0 8px}
+  kbd{background:#27272a;border:1px solid #3f3f46;border-bottom-width:2px;border-radius:5px;
+      padding:1px 6px;font:12px ui-monospace,Menlo,monospace}
+  button{background:#8b5cf6;color:#fff;border:none;border-radius:8px;padding:9px 14px;
+         font:600 13px/1 inherit;cursor:pointer;margin-right:8px}
+  button.alt{background:#3f3f46}
+  .broken{color:#f87171}
+</style>
+</head>
+<body>
+<main>
+  <h1>supercomment demo</h1>
+  <p class="sub">Press <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> and click anything on this page.</p>
+
+  <div class="card" id="hero">
+    <h2>Pick this heading</h2>
+    <p>Any element works. The report carries its CSS selector, outerHTML, bounding box and text.</p>
+  </div>
+
+  <div class="card">
+    <h2>Generate some context first</h2>
+    <p>Then send a report and see it all captured.</p>
+    <button onclick="noisyLogs()">Log some noise</button>
+    <button onclick="goodRequest()">Good request</button>
+    <button class="alt" onclick="badRequest()">Failing request</button>
+    <button class="alt" onclick="throwError()">Throw an error</button>
+  </div>
+
+  <div class="card">
+    <h2>No endpoint? No problem.</h2>
+    <p>Without <code>data-endpoint</code> the report is copied to your clipboard as JSON,
+       so you can paste it straight into a chat with your agent.</p>
+  </div>
+</main>
+
+<script>
+function noisyLogs() {
+  console.log('user clicked the noise button', { at: Date.now() });
+  console.info('cart total recalculated', { items: 3, total: 41.5 });
+  console.warn('deprecated prop "size" used on <Button>');
+}
+function goodRequest() { fetch('/reports').then(r => r.json()).then(d => console.log('got', d.length, 'reports')); }
+function badRequest() { fetch('/definitely-not-here').then(r => console.log('status', r.status)); }
+function throwError() { setTimeout(function () { null.oops(); }, 0); }
+</script>
+</body>
+</html>
