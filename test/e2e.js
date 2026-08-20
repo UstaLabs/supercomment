@@ -178,12 +178,34 @@ async function waitForServer(tries = 50) {
     check('composer lists every capture group', groups.join(',') === 'Steps,Errors,Network,Console', groups.join(','));
 
     /* ---- per-entry picking + send ---- */
+    // captured context is opt-in; recorded steps are the exception
+    const defaults = await page.evaluate(() => {
+      const root = document.getElementById('supercomment-root').shadowRoot;
+      const out = {};
+      Array.from(root.querySelectorAll('.grp')).forEach((g) => {
+        const name = g.querySelector('.gname').textContent;
+        const boxes = Array.from(g.querySelectorAll('.gi input'));
+        out[name] = { total: boxes.length, checked: boxes.filter((b) => b.checked).length };
+      });
+      return out;
+    });
+    check('context groups start unchecked',
+      defaults.Console.checked === 0 && defaults.Network.checked === 0 && defaults.Errors.checked === 0,
+      `console ${defaults.Console.checked}/${defaults.Console.total}, ` +
+        `network ${defaults.Network.checked}/${defaults.Network.total}, ` +
+        `errors ${defaults.Errors.checked}/${defaults.Errors.total}`);
+    check('recorded steps start checked',
+      defaults.Steps.total > 0 && defaults.Steps.checked === defaults.Steps.total,
+      `${defaults.Steps.checked}/${defaults.Steps.total}`);
+
+    // opt two console lines in, leave the rest out
     const consoleTotal = await page.evaluate(() => {
       const root = document.getElementById('supercomment-root').shadowRoot;
       const grp = Array.from(root.querySelectorAll('.grp')).find((g) => g.querySelector('.gname').textContent === 'Console');
       grp.classList.add('open');
       const boxes = grp.querySelectorAll('.gi input');
       boxes[0].click();
+      boxes[1].click();
       return boxes.length;
     });
     await page.evaluate(() => {
@@ -197,8 +219,10 @@ async function waitForServer(tries = 50) {
     const latest = list[0];
     check('report reaches the server', !!latest, latest && latest.id);
     check('typed as a recording', latest && latest.type === 'recording', latest && latest.type);
-    check('honours per-entry selection', latest && latest.counts.console === consoleTotal - 1,
-      latest && `${latest.counts.console}/${consoleTotal}`);
+    check('sends only what was ticked', latest && latest.counts.console === 2,
+      latest && `${latest.counts.console} of ${consoleTotal} console entries`);
+    check('omits untouched groups', latest && latest.counts.network === 0 && latest.counts.errors === 0,
+      latest && `network ${latest.counts.network}, errors ${latest.counts.errors}`);
 
     const md = await (await fetch(`${BASE}/reports/${latest.id}?format=md`)).text();
     check('markdown carries repro steps', /## Steps to reproduce/.test(md), (md.match(/^\d+\. /gm) || []).length + ' numbered');

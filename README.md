@@ -82,7 +82,13 @@ A burst of typing in one field collapses to a single step, and steps keep the ti
 
 ## Picking what to send
 
-Console, network, error and step entries are listed individually in the composer, each with its own checkbox. Send the one failing request and skip forty noisy logs, or drop the step where you fumbled the form. The group header toggles all of it at once, and the buffers freeze when the panel opens so the checkboxes can't drift.
+**Captured context is opt-in.** Console, network and error entries start *unchecked* — the composer shows you what it has (`6 captured`, in accent so it reads as an invitation) and you tick what's relevant. Attaching two hundred console lines nobody read is noise, and it can carry data you never meant to send.
+
+Recorded steps are the exception: they arrive checked, because a recording without its steps says nothing.
+
+Entries are listed individually, so you can send the one failing request and skip the rest. The group header ticks everything in that group at once, and the buffers freeze when the panel opens so nothing drifts under the checkboxes.
+
+Prefer the old behaviour? `data-include="all"` pre-selects everything.
 
 ## Configuration
 
@@ -101,6 +107,7 @@ Via `data-*` attributes on the script tag, or `window.SUPERCOMMENT_CONFIG` set *
 | `data-errors` | `true` | Capture `window.onerror` + unhandled rejections. |
 | `data-bodies` | `errors` | Response bodies: `errors` \| `always` \| `never`. |
 | `data-screenshot` | `ask` | `ask` (checkbox off) \| `on` (checkbox on) \| `off`. |
+| `data-include` | `none` | Which capture groups arrive pre-selected: `none` \| `all`. Recorded steps are always on. |
 | `data-maxlogs` | `200` | Console ring-buffer size. |
 | `data-maxnetwork` | `100` | Network ring-buffer size. |
 | `data-theme` | `dark` | `dark` \| `light`. |

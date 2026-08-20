@@ -48,6 +48,7 @@
       errors: 'captureErrors',
       bodies: 'captureBodies',
       screenshot: 'screenshot',
+      include: 'include',
       maxlogs: 'maxLogs',
       maxnetwork: 'maxNetwork',
       theme: 'theme'
@@ -76,6 +77,9 @@
       captureErrors: true,
       captureBodies: 'errors', // 'errors' | 'always' | 'never'
       screenshot: 'ask', // 'ask' (checkbox, off) | 'on' (checkbox, on) | 'off'
+      // Which capture groups arrive pre-selected in the composer. Recorded
+      // steps are always on — a recording without them says nothing.
+      include: 'none', // 'none' | 'all'
       maxLogs: 200,
       maxNetwork: 100,
       maxErrors: 50,
@@ -890,6 +894,8 @@
     '.ghead .car{font-size:8px;color:#71717a;transition:transform .15s;flex:none;width:8px}',
     '.grp.open .car{transform:rotate(90deg)}',
     '.grp.empty{opacity:.45}',
+    '.grp.avail .cnt{color:#c4b5fd}',
+    '.panel.light .grp.avail .cnt{color:#7c3aed}',
     '.glist{display:none;max-height:148px;overflow:auto;padding:3px;border-top:1px solid #3f3f46}',
     '.panel.light .glist{border-color:#e4e4e7}',
     '.grp.open .glist{display:block}',
@@ -1146,16 +1152,26 @@
   // the checkboxes while you're deciding what to send.
   var groups = {};
 
-  function makeGroup(key, name, items, render, openByDefault) {
+  function makeGroup(key, name, items, render, openByDefault, checkedByDefault) {
     var boxes = [];
-    var master = h('input', { type: 'checkbox', checked: 'checked' });
+    var on = !!checkedByDefault;
+    var master = h('input', on ? { type: 'checkbox', checked: 'checked' } : { type: 'checkbox' });
     var list = h('div', { class: 'glist' });
+    var grp = h('div', {
+      class:
+        'grp' +
+        (items.length ? '' : ' empty') +
+        // populated but unselected: the count is an invitation, not a label
+        (items.length && !on ? ' avail' : '') +
+        (openByDefault && items.length ? ' open' : '')
+    });
 
     items.forEach(function (item, i) {
       var meta = render(item);
-      var cb = h('input', { type: 'checkbox', checked: 'checked' });
+      var cb = h('input', on ? { type: 'checkbox', checked: 'checked' } : { type: 'checkbox' });
       cb.addEventListener('change', function () {
         master.checked = boxes.some(function (b) { return b.checked; });
+        grp.classList.toggle('avail', !master.checked);
       });
       boxes.push(cb);
       list.appendChild(
@@ -1168,7 +1184,6 @@
       void i;
     });
 
-    var grp = h('div', { class: 'grp' + (items.length ? '' : ' empty') + (openByDefault && items.length ? ' open' : '') });
     var head = h('div', { class: 'ghead' }, [
       master,
       h('span', { class: 'car', text: '\u25B6' }),
@@ -1179,6 +1194,7 @@
     master.addEventListener('click', function (e) { e.stopPropagation(); });
     master.addEventListener('change', function () {
       boxes.forEach(function (b) { b.checked = master.checked; });
+      grp.classList.toggle('avail', !master.checked && items.length > 0);
     });
     head.addEventListener('click', function () {
       if (items.length) grp.classList.toggle('open');
@@ -1228,23 +1244,27 @@
     // freeze the buffers for the life of this panel
     groups = {};
     ui.groupBox.innerHTML = '';
+    // Captured context is opt-in: attaching 200 console lines nobody read is
+    // noise, and it can carry data the user never meant to send. Recorded
+    // steps are the exception — they're why the recording exists.
+    var preselect = cfg.include === 'all';
     if (opts.recording || rec.steps.length) {
       groups.steps = makeGroup('steps', 'Steps', rec.steps.slice(), function (st) {
         return { cls: 'acc', tag: STEP_TAG[st.type] || 'STEP', text: stepText(st) };
-      }, !!opts.recording);
+      }, !!opts.recording, true);
       ui.groupBox.appendChild(groups.steps.el);
     }
     groups.errors = makeGroup('errors', 'Errors', errors.all(), function (e) {
       return { cls: 'err', tag: 'ERR', text: e.message };
-    }, errors.items.length > 0 && !opts.recording);
-    groups.network = makeGroup('network', 'Network', network.all(), netMeta, false);
+    }, errors.items.length > 0 && !opts.recording, preselect);
+    groups.network = makeGroup('network', 'Network', network.all(), netMeta, false, preselect);
     groups.console = makeGroup('console', 'Console', logs.all(), function (c) {
       return {
         cls: c.level === 'error' ? 'err' : c.level === 'warn' ? 'warn' : '',
         tag: c.level.slice(0, 4).toUpperCase(),
         text: c.text
       };
-    }, false);
+    }, false, preselect);
     [groups.errors, groups.network, groups.console].forEach(function (g) {
       ui.groupBox.appendChild(g.el);
     });

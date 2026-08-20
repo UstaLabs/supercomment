@@ -83,8 +83,8 @@ Then tell the user how to drive it — they need to know this or the setup is us
 
 - **Selectors are point-in-time.** Generated against the DOM as it was; a re-render may make one stale. Treat it as a strong hint for locating source, not as something to assert against now.
 - **Values in steps are real, secrets are not.** Password fields, `data-sc-mask`, and card/CVC/OTP autocomplete fields record as `••••••`. Never treat those bullets as the literal value, and don't ask the user to paste the real one.
-- **Buffers are capped** — 200 console lines, 100 requests, 50 errors by default. An old event may have rolled off; absence of an error in the report is not evidence it didn't happen.
-- **The user picks what to send.** Entries are individually selectable, so a report may deliberately include one request and omit the rest. Don't read a short Network section as "nothing else happened."
+- **Buffers are capped** — 200 console lines, 100 requests, 50 errors by default. An old event may have rolled off.
+- **Context is opt-in, so absence means nothing.** Console, network and error entries start unchecked; the user ticks what looked relevant. A report with no Network section does **not** mean no requests were made — it means they didn't attach any. If you need something that isn't there, ask them to reproduce it and tick that group, rather than concluding it didn't happen.
 - **`type` tells you the shape**: `element` (they pointed at something), `page` (whole-page complaint), `recording` (has repro steps).
 
 ## Reference

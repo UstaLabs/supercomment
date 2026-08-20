@@ -21,6 +21,11 @@ export interface SupercommentConfig {
   captureBodies?: 'errors' | 'always' | 'never';
   /** Screenshot checkbox: shown-and-off, shown-and-on, or hidden. */
   screenshot?: 'ask' | 'on' | 'off';
+  /**
+   * Which capture groups arrive pre-selected in the composer.
+   * Recorded steps are always pre-selected regardless.
+   */
+  include?: 'none' | 'all';
   maxLogs?: number;
   maxNetwork?: number;
   maxErrors?: number;

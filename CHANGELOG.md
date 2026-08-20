@@ -20,7 +20,9 @@ First release.
   Password, `data-sc-mask` and `autocomplete` card/OTP fields are masked; text is read from the
   `input` event rather than keystrokes.
 - **Per-entry picking** — console, network, error and step entries are individually selectable in
-  the composer. Buffers freeze while the panel is open.
+  the composer, and captured context is opt-in: console, network and errors start unchecked so
+  nothing is attached that the user didn't choose. Recorded steps start checked. `data-include="all"`
+  restores pre-selection. Buffers freeze while the panel is open.
 - **Screenshots** via `getDisplayMedia`, so no DOM rasterizer is bundled.
 - **Optional server** (`npx supercomment`) — zero-dependency sink writing `<id>.json` and `<id>.md`
   per report, an HTML inbox, and `GET /inbox.md` for agents to read the backlog in one request.
