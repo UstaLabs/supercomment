@@ -163,6 +163,7 @@ Each report is written twice: `<id>.json` (full fidelity) and `<id>.md` (what yo
 | `GET /inbox.md` | **All unread reports as one Markdown doc** (`?markRead=1` to consume, `?all=1` for everything). |
 | `GET /` | The demo site. |
 | `GET /inbox` | Minimal HTML inbox viewer. |
+| `GET /skill.md` | The agent skill, for an agent on another machine. |
 | `GET /supercomment.js` | The client library. |
 
 ### Feeding an agent
@@ -174,6 +175,21 @@ curl -s 'http://localhost:4321/inbox.md?markRead=1'
 ```
 
 or just point the agent at the folder — `.supercomment/*.md` is already the format you'd want to paste.
+
+## The agent skill
+
+The library gets context *to* your agent; the bundled skill teaches it what to do *with* it. Install it into a project:
+
+```bash
+npx supercomment install-skill            # ./.claude/skills/supercomment/
+npx supercomment install-skill --global   # ~/.claude/skills/supercomment/
+```
+
+It tells the agent where reports live and in what order to look for them, how to read each section (the user's sentence is the symptom; the evidence names the cause), how to place the script tag and why the position isn't stylistic, and the things that will trip it up — that selectors are point-in-time, that `••••••` is a masked secret and not a value to ask for, that buffers are capped so a missing error isn't proof of absence, and that a short Network section may just mean the user deselected the rest.
+
+The running server also serves it at `GET /skill.md`, for agents on another machine.
+
+The skill's source is `skills/supercomment/SKILL.md` — it works with Claude Code, and it's plain Markdown with YAML frontmatter, so it ports to anything that reads skills.
 
 ### Selectors
 

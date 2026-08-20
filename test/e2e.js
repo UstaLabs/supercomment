@@ -204,6 +204,36 @@ async function waitForServer(tries = 50) {
     check('markdown carries repro steps', /## Steps to reproduce/.test(md), (md.match(/^\d+\. /gm) || []).length + ' numbered');
     check('markdown never leaks the card', !/4242/.test(md), /4242/.test(md) ? 'LEAKED' : 'clean');
 
+    /* ---- agent skill ---- */
+    const skillRes = await fetch(BASE + '/skill.md');
+    const skillBody = await skillRes.text();
+    check('server exposes the agent skill', skillRes.ok && /^---\nname: supercomment/.test(skillBody),
+      skillBody.length + ' bytes');
+
+    const skillDir = fs.mkdtempSync(path.join(os.tmpdir(), 'supercomment-skill-'));
+    const run = (args) =>
+      new Promise((resolve) => {
+        const c = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'index.js'), ...args], {
+          cwd: skillDir,
+          stdio: 'ignore'
+        });
+        c.on('exit', (code) => resolve(code));
+      });
+
+    const installed = await run(['install-skill']);
+    const skillPath = path.join(skillDir, '.claude', 'skills', 'supercomment', 'SKILL.md');
+    check('install-skill writes the skill', installed === 0 && fs.existsSync(skillPath), 'exit ' + installed);
+    check('installed skill matches the source',
+      fs.existsSync(skillPath) &&
+        fs.readFileSync(skillPath, 'utf8') ===
+          fs.readFileSync(path.join(__dirname, '..', 'skills', 'supercomment', 'SKILL.md'), 'utf8'),
+      'byte-identical');
+    const second = await run(['install-skill']);
+    check('install-skill refuses to clobber', second === 1, 'exit ' + second);
+    const forced = await run(['install-skill', '--force']);
+    check('install-skill --force overwrites', forced === 0, 'exit ' + forced);
+    fs.rmSync(skillDir, { recursive: true, force: true });
+
     /* ---- inbox ---- */
     const inbox = await (await fetch(BASE + '/inbox.md?markRead=1')).text();
     check('inbox returns unread reports', /## Steps to reproduce/.test(inbox), inbox.length + ' bytes');

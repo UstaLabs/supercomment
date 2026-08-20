@@ -28,6 +28,54 @@ function arg(name, def) {
   return i !== -1 && argv[i + 1] ? argv[i + 1] : def;
 }
 
+/* ---------------------------------------------------------------- *
+ * `supercomment install-skill` — drop the agent skill into a project
+ * ---------------------------------------------------------------- */
+
+if (argv[0] === 'install-skill') {
+  const global = argv.includes('--global') || argv.includes('-g');
+  const base = global
+    ? path.join(require('os').homedir(), '.claude', 'skills')
+    : path.join(process.cwd(), '.claude', 'skills');
+  const target = path.join(base, 'supercomment');
+  const source = path.join(__dirname, '..', 'skills', 'supercomment', 'SKILL.md');
+
+  if (!fs.existsSync(source)) {
+    console.error('Could not find the bundled skill at ' + source);
+    process.exit(1);
+  }
+
+  const dest = path.join(target, 'SKILL.md');
+  const exists = fs.existsSync(dest);
+  if (exists && !argv.includes('--force')) {
+    console.error(
+      `A skill already exists at ${path.relative(process.cwd(), dest)}.\n` +
+        'Re-run with --force to overwrite it.'
+    );
+    process.exit(1);
+  }
+
+  fs.mkdirSync(target, { recursive: true });
+  fs.copyFileSync(source, dest);
+  console.log(
+    '\n' + C.purple + ' supercomment' + C.off + ' skill installed\n' +
+      '  ' + dest + '\n\n' +
+      '  Your agent will now pick up reports from .supercomment/ and the\n' +
+      '  running server. Restart the agent session to load it.\n'
+  );
+  process.exit(0);
+}
+
+if (argv[0] === 'help' || argv.includes('--help') || argv.includes('-h')) {
+  console.log(
+    '\n' + C.purple + ' supercomment' + C.off + '\n\n' +
+      '  supercomment [--port 4321] [--dir .supercomment]   run the report sink\n' +
+      '  supercomment install-skill [--global] [--force]    install the agent skill\n' +
+      '  supercomment --help\n'
+  );
+  process.exit(0);
+}
+
 const PORT = parseInt(arg('port', process.env.SUPERCOMMENT_PORT || '4321'), 10);
 const DIR = path.resolve(arg('dir', process.env.SUPERCOMMENT_DIR || '.supercomment'));
 const SHOTS = path.join(DIR, 'screenshots');
@@ -394,13 +442,27 @@ const server = http.createServer((req, res) => {
     return text(res, 200, fs.readFileSync(f, 'utf8'), 'text/html');
   }
 
+  if (req.method === 'GET' && p === '/skill.md') {
+    const f = path.join(__dirname, '..', 'skills', 'supercomment', 'SKILL.md');
+    if (!fs.existsSync(f)) return text(res, 404, 'skill not bundled');
+    return text(res, 200, fs.readFileSync(f, 'utf8'), 'text/markdown');
+  }
+
   if (req.method === 'GET' && (p === '/inbox' || p === '/inbox/')) {
     return text(res, 200, VIEWER_HTML, 'text/html');
   }
 
   json(res, 404, {
     error: 'not found',
-    try: ['POST /report', 'GET /reports', 'GET /inbox', 'GET /inbox.md', 'GET /supercomment.js', 'GET /']
+    try: [
+      'POST /report',
+      'GET /reports',
+      'GET /inbox',
+      'GET /inbox.md',
+      'GET /skill.md',
+      'GET /supercomment.js',
+      'GET /'
+    ]
   });
 });
 
@@ -411,6 +473,7 @@ server.listen(PORT, () => {
   console.log('  endpoint  http://localhost:' + PORT + '/report');
   console.log('  client    http://localhost:' + PORT + '/supercomment.js');
   console.log('  files     ' + DIR);
+  console.log('  skill     http://localhost:' + PORT + '/skill.md');
   console.log('\n  Add to your page <head>:');
   console.log(
     '  ' + C.dim + '<script src="http://localhost:' + PORT + '/supercomment.js" ' +

@@ -25,4 +25,7 @@ First release.
 - **Optional server** (`npx supercomment`) — zero-dependency sink writing `<id>.json` and `<id>.md`
   per report, an HTML inbox, and `GET /inbox.md` for agents to read the backlog in one request.
 - **Clipboard fallback** when no endpoint is configured.
+- **Agent skill** (`skills/supercomment/SKILL.md`) — teaches a coding agent where reports live, how
+  to read each section, and the failure modes to avoid. Install with
+  `npx supercomment install-skill [--global]`, or fetch it from a running server at `GET /skill.md`.
 - Shadow-DOM UI, fixed-size ring buffers, TypeScript definitions, and a browser-driven test suite.
