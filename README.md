@@ -8,6 +8,32 @@ Built for the loop where an agent ships a page and you look at it: instead of de
 - **Loads first.** Put it at the top of `<head>` so console/network/error capture is installed before any app code runs. That's the whole point — you catch the error that happened *before* you decided to report it.
 - **Optional backend.** With no endpoint, reports are copied to your clipboard as JSON. With the bundled server, each report lands as a readable Markdown file.
 
+## Install
+
+Pick whichever suits you — the library is one self-contained file with no build step and no dependencies.
+
+**From a CDN** (nothing to install):
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/supercomment@0.1/dist/supercomment.min.js"
+        data-endpoint="https://your-sink.example.com/report"></script>
+```
+
+**From npm**, if you'd rather vendor it or bundle it:
+
+```bash
+npm install supercomment
+```
+
+```js
+import 'supercomment';           // self-initialising; window.supercomment is the API
+```
+
+Configure a bundled import by setting `window.SUPERCOMMENT_CONFIG` **before** the import, since the
+library initialises the moment it's evaluated. TypeScript definitions ship in the package.
+
+**Self-hosted**, copying `dist/supercomment.min.js` next to your other assets, is equally fine.
+
 ## Quick start
 
 ```bash
@@ -165,6 +191,30 @@ Requires a secure context (`https://` or `localhost`).
 - Buffers are fixed-size rings — long-running pages don't grow memory.
 - Capture wrappers pass through to the originals and swallow their own errors; a broken report should never break your page.
 - The report POST to your own endpoint is excluded from network capture (by exact URL, so a sibling route like `/reports` is still recorded).
+
+## Contributing
+
+```bash
+npm ci --include=dev
+npm run build      # regenerate dist/ (committed, so CDNs can serve it)
+npm test           # boots the server and drives real Chrome against the demo
+```
+
+`npm test` needs a Chrome or Chromium binary; it looks in the usual places, or set `CHROME=/path/to/chrome`.
+Every bug this library has shipped was found by driving it in a browser rather than by reading the
+code, so the suite does the same — each regression it caught has a named test guarding it.
+
+`dist/` is committed so jsDelivr and unpkg can serve the library without a publish step;
+`npm run build:check` fails if it has drifted from `src/`, and CI runs it on every push.
+
+## Releasing
+
+1. Bump `version` in `package.json` **and** the `VERSION` constant in `src/supercomment.js` —
+   the build refuses to run if they disagree, since a mismatch mislabels every report.
+2. `npm run build && npm test`
+3. Update `CHANGELOG.md`, commit, tag.
+4. Publish a GitHub release — the `Publish` workflow runs the tests and pushes to npm with
+   provenance, using the `NPM_TOKEN` repository secret.
 
 ## License
 

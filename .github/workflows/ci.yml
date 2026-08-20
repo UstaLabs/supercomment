@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --include=dev
+      # dist/ is committed for CDN use — fail if it drifts from src/
+      - run: npm run build:check
+      - run: npm run typecheck
+      # ubuntu-latest ships Chrome at this path
+      - run: npm test
+        env:
+          CHROME: /usr/bin/google-chrome

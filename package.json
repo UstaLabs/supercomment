@@ -1,17 +1,77 @@
 {
   "name": "supercomment",
   "version": "0.1.0",
-  "description": "Drop-in page commenting + console/network/error capture. Point at any page (especially one an agent just built), comment on an element, ship the whole context to your agent.",
-  "main": "src/supercomment.js",
-  "browser": "src/supercomment.js",
-  "files": ["src", "server", "README.md"],
-  "bin": { "supercomment": "server/index.js" },
-  "scripts": {
-    "start": "node server/index.js",
-    "demo": "node server/index.js --dir .supercomment"
+  "description": "Click any element on any page, write a comment, and send the whole context — selector, console, network, errors, repro steps — to your coding agent. Zero dependencies.",
+  "keywords": [
+    "comment",
+    "annotation",
+    "feedback",
+    "bug-report",
+    "screenshot",
+    "session-replay",
+    "reproduction-steps",
+    "console",
+    "network",
+    "devtools",
+    "agent",
+    "ai",
+    "vibe-coding"
+  ],
+  "homepage": "https://github.com/UstaLabs/supercomment#readme",
+  "bugs": {
+    "url": "https://github.com/UstaLabs/supercomment/issues"
   },
-  "keywords": ["comment", "feedback", "annotation", "bug-report", "console", "network", "screenshot", "agent", "vibe-coding"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UstaLabs/supercomment.git"
+  },
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/AhmetHuseyinDOK/supercomment" },
-  "dependencies": {}
+  "author": "Ahmet Hüseyin DOK",
+  "type": "commonjs",
+  "main": "dist/supercomment.js",
+  "browser": "dist/supercomment.js",
+  "unpkg": "dist/supercomment.min.js",
+  "jsdelivr": "dist/supercomment.min.js",
+  "types": "types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./dist/supercomment.js"
+    },
+    "./min": "./dist/supercomment.min.js",
+    "./server": "./server/index.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "supercomment": "server/index.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "server",
+    "types",
+    "demo",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "build:check": "node scripts/build.js --check",
+    "typecheck": "tsc --noEmit --strict --skipLibCheck types/index.d.ts",
+    "start": "node server/index.js",
+    "test": "node test/e2e.js",
+    "prepublishOnly": "npm run build && npm run build:check && npm run typecheck"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "puppeteer-core": "^23.11.1",
+    "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
