@@ -178,10 +178,10 @@ button.act:hover{border-color:var(--accent);color:var(--accent)}
 button.act:active{transform:translateY(1px)}
 button.act.bad:hover{border-color:var(--bad);color:var(--bad)}
 
-.meters{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);
+.meters{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);
         border:1px solid var(--rule);border-radius:2px;overflow:hidden;margin-bottom:14px}
 .meter{background:var(--panel);padding:12px 13px}
-.meter .n{font:700 26px/1 "JetBrains Mono",monospace;font-variant-numeric:tabular-nums;
+.meter .n{font:700 23px/1 "JetBrains Mono",monospace;font-variant-numeric:tabular-nums;
           letter-spacing:-.02em;display:block}
 .meter .l{font:500 10.5px/1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:.09em;
           color:var(--ink-3);margin-top:6px;display:block}
@@ -204,6 +204,21 @@ button.act.bad:hover{border-color:var(--bad);color:var(--bad)}
 .chip.acc{background:var(--accent-soft);color:var(--accent)}
 .tape .txt{overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}
 .tape .empty{color:var(--ink-3)}
+
+/* ── recordable checkout flow ───────────────────────────────────────── */
+.checkout{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px;margin-top:18px}
+@media (max-width:640px){.checkout{grid-template-columns:1fr}}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font:500 11px/1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)}
+.field input,.field select{
+  font:400 14px/1.2 "JetBrains Mono",monospace;color:var(--ink);
+  background:var(--sunk);border:1px solid var(--rule);border-radius:2px;padding:9px 10px;
+}
+.field input:focus,.field select:focus{border-color:var(--accent);outline:none}
+.masked{font-size:9.5px;background:var(--warn-soft);color:var(--warn);padding:1px 5px;border-radius:2px;
+        letter-spacing:0;text-transform:none}
+.formrow{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-top:2px}
+.formmsg{font:400 13px/1.4 Newsreader,serif;color:var(--bad)}
 
 /* ── deliberately-broken specimen ───────────────────────────────────── */
 .specimen{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
@@ -267,7 +282,7 @@ footer{padding:44px 0 70px;border-top:1px solid var(--rule);color:var(--ink-3);f
 
   <div class="keyline">
     <span class="status"><span class="led"></span><span id="live">library active on this page</span></span>
-    <span>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> and click anything. On a phone, tap the 💬 button.</span>
+    <span>Tap the 💬 button for all three modes, or press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> to pick an element.</span>
   </div>
 </header>
 
@@ -295,6 +310,7 @@ footer{padding:44px 0 70px;border-top:1px solid var(--rule);color:var(--ink-3);f
 
     <div>
       <div class="meters">
+        <div class="meter" id="m-step-box"><span class="n" id="m-steps">0</span><span class="l">steps</span></div>
         <div class="meter"><span class="n" id="m-console">0</span><span class="l">console</span></div>
         <div class="meter"><span class="n" id="m-network">0</span><span class="l">network</span></div>
         <div class="meter" id="m-err-box"><span class="n" id="m-errors">0</span><span class="l">errors</span></div>
@@ -302,6 +318,42 @@ footer{padding:44px 0 70px;border-top:1px solid var(--rule);color:var(--ink-3);f
       <div class="tape" id="tape"><div class="empty">buffers empty — press a button</div></div>
     </div>
   </div>
+</section>
+
+<section id="flow">
+  <div class="path mono">main &gt; section#flow &gt; form</div>
+  <h2 class="h3" style="font-size:26px;letter-spacing:-.02em;margin-bottom:8px">A flow worth recording</h2>
+  <p class="note" style="max-width:60ch">
+    Hit <b>Record actions</b> in the 💬 menu, then run this checkout: type an email, pick a quantity,
+    apply the coupon (it fails), press Pay (it throws). Stop the recording and the report arrives as a
+    numbered list of steps with the failing request and the stack trace lined up against it.
+  </p>
+
+  <form class="card checkout" onsubmit="return pay(event)">
+    <div class="field">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" placeholder="you@example.com" autocomplete="email">
+    </div>
+    <div class="field">
+      <label for="qty">Quantity</label>
+      <select id="qty" name="qty">
+        <option>1 seat</option><option>3 seats</option><option>10 seats</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="coupon">Coupon</label>
+      <input id="coupon" name="coupon" placeholder="LAUNCH20">
+    </div>
+    <div class="field">
+      <label for="card">Card <span class="masked mono">masked</span></label>
+      <input id="card" name="card" autocomplete="cc-number" placeholder="4242 4242 4242 4242">
+    </div>
+    <div class="formrow">
+      <button type="button" class="act" onclick="applyCoupon()">Apply coupon</button>
+      <button type="submit" class="act bad">Pay $19</button>
+      <span id="formmsg" class="formmsg"></span>
+    </div>
+  </form>
 </section>
 
 <section id="specimen">
@@ -432,6 +484,23 @@ function notFound(){ fetch('api/pricing/discount').then(function(r){ console.log
 function boom(){ setTimeout(function(){ var cfg = null; cfg.pricing.render(); }, 0); }
 function reject(){ Promise.reject(new Error('checkout session expired')); }
 
+function applyCoupon(){
+  var code = document.getElementById('coupon').value || '(empty)';
+  console.info('validating coupon', code);
+  document.getElementById('formmsg').textContent = 'Checking…';
+  fetch('api/coupon?code=' + encodeURIComponent(code)).then(function(r){
+    console.warn('coupon lookup failed with', r.status);
+    document.getElementById('formmsg').textContent = "That coupon didn't apply. (HTTP " + r.status + ")";
+  });
+}
+function pay(e){
+  e.preventDefault();
+  console.log('starting checkout', {email: document.getElementById('email').value});
+  setTimeout(function(){ var session = null; session.charge(); }, 0);
+  document.getElementById('formmsg').textContent = 'Payment failed — see the console.';
+  return false;
+}
+
 /* ── live buffer readout ─────────────────────────────────────────────── */
 var tape = document.getElementById('tape');
 
@@ -445,6 +514,8 @@ function paint(){
   if (!window.supercomment) return;
   var s = window.supercomment.snapshot();
 
+  document.getElementById('m-steps').textContent = s.steps.length;
+  document.getElementById('m-step-box').className = 'meter' + (window.supercomment.recording() ? ' hot' : '');
   document.getElementById('m-console').textContent = s.console.length;
   document.getElementById('m-network').textContent = s.network.length;
   document.getElementById('m-errors').textContent = s.errors.length;

@@ -23,17 +23,40 @@ Then, as the **first** thing in your page's `<head>`:
 
 Open your page and hit <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>.
 
-Try it without your own page: `npx supercomment` then open `http://localhost:4321` — the demo site has buttons that dirty each capture buffer, a live readout of what's in them, and a deliberately broken pricing card to report.
+Try it without your own page: `npx supercomment` then open `http://localhost:4321` — the demo site has buttons that dirty each capture buffer, a live readout of what's in them, a deliberately broken pricing card to report, and a checkout flow to record.
 
-## Hotkeys
+## Three modes
 
-| Key | Action |
-| --- | --- |
-| <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> | Pick an element and comment on it |
-| <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd> | Page-level report (no element — "this page is broken") |
-| <kbd>Esc</kbd> | Cancel picking / close the panel |
+The floating 💬 button opens a menu with all three; each also has a hotkey.
 
-There's also a floating 💬 button (`data-button="false"` to hide it).
+| Mode | Key | What it does |
+| --- | --- | --- |
+| **Pick an element** | <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> | Click the thing that looks wrong. Carries its selector, HTML and box. |
+| **Report this page** | <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd> | No element — just the page and its logs. |
+| **Record actions** | <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd> | Capture the steps that trigger the bug, then stop and describe it. |
+
+<kbd>Esc</kbd> closes the menu, cancels picking, or closes the panel. Hide the button with `data-button="false"`.
+
+## Recording
+
+Recording turns "it breaks sometimes" into a numbered reproduction. It captures clicks, typing, select changes, form submits, meaningful keys (Enter/Escape/Tab/arrows), scrolls, resizes, and navigation — including SPA route changes via `pushState`. Console, network and errors keep filling their buffers throughout, so the report lines the failing request up against the step that caused it:
+
+```markdown
+## Steps to reproduce
+
+1. Open https://app.example.com/checkout  _(0:01)_
+2. Type "ahmet@example.com" into Email  _(0:01)_
+3. Choose "3 seats" in Quantity  _(0:02)_
+4. Click "Apply coupon"  `form.checkout > div.formrow > button.act`  _(0:02)_
+```
+
+**What it never records:** `type="password"` fields, anything with `data-sc-mask`, and inputs whose `autocomplete` marks them as a card number, CVC or one-time code — those log as `••••••`. Ordinary keystrokes aren't logged individually either; text is read from the `input` event, so it's a step recorder, not a keylogger.
+
+A burst of typing in one field collapses to a single step, and steps keep the timestamp of when you started typing there, so the list stays in order against the network and console entries.
+
+## Picking what to send
+
+Console, network, error and step entries are listed individually in the composer, each with its own checkbox. Send the one failing request and skip forty noisy logs, or drop the step where you fumbled the form. The group header toggles all of it at once, and the buffers freeze when the panel opens so the checkboxes can't drift.
 
 ## Configuration
 
@@ -45,6 +68,7 @@ Via `data-*` attributes on the script tag, or `window.SUPERCOMMENT_CONFIG` set *
 | `data-project` | `location.host` | Free-form label carried in the payload. |
 | `data-hotkey` | `ctrl+shift+k` | Element-pick hotkey (`ctrl` also matches ⌘). |
 | `data-pagehotkey` | `ctrl+shift+u` | Page-report hotkey. |
+| `data-recordhotkey` | `ctrl+shift+y` | Start/stop recording. |
 | `data-button` | `true` | Show the floating launcher. |
 | `data-console` | `true` | Capture `console.*`. |
 | `data-network` | `true` | Capture `fetch` + `XMLHttpRequest`. |
@@ -59,9 +83,14 @@ Via `data-*` attributes on the script tag, or `window.SUPERCOMMENT_CONFIG` set *
 
 ```js
 supercomment.pick()                 // enter element-picking mode
+supercomment.menu()                 // toggle the mode menu
 supercomment.open(el)               // open the panel, optionally pre-targeted
+supercomment.record()               // start recording actions
+supercomment.stop()                 // stop and open the composer; stop(false) to skip it
+supercomment.recording()            // { since, steps } while recording, else null
+supercomment.steps()                // the recorded steps so far
 supercomment.report('checkout 500s') // send with no UI -> Promise<{id, via}>
-supercomment.snapshot()             // { page, console, network, errors } right now
+supercomment.snapshot()             // { page, console, network, errors, steps } right now
 supercomment.screenshot()           // Promise<dataURL>
 supercomment.clear()                // empty the buffers
 ```
@@ -79,12 +108,13 @@ window.SUPERCOMMENT_CONFIG = {
 ```jsonc
 {
   "id": "mt1hw9th-3rajzn",
-  "type": "element",              // or "page"
+  "type": "recording",            // or "element" / "page"
   "project": "demo",
   "createdAt": "2026-08-20T12:27:03.221Z",
   "comment": "This heading is too small.",
   "page":    { "url", "title", "viewport", "scroll", "userAgent", "language" },
   "element": { "selector", "tag", "text", "html", "attributes", "rect" },
+  "steps":   [ { "type", "t", "selector", "label", "value" } ],   // from Record
   "screenshot": "data:image/jpeg;base64,…",  // stripped to a file by the server
   "console": [ { "level", "t", "at", "text" } ],
   "network": [ { "method", "url", "status", "ok", "ms", "responseBody" } ],

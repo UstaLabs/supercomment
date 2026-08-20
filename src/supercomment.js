@@ -40,6 +40,7 @@
       project: 'project',
       hotkey: 'hotkey',
       pagehotkey: 'pageHotkey',
+      recordhotkey: 'recordHotkey',
       button: 'button',
       console: 'captureConsole',
       network: 'captureNetwork',
@@ -67,6 +68,7 @@
       project: location.host || 'local',
       hotkey: 'ctrl+shift+k',
       pageHotkey: 'ctrl+shift+u',
+      recordHotkey: 'ctrl+shift+y',
       button: true, // floating launcher button
       captureConsole: true,
       captureNetwork: true,
@@ -359,6 +361,226 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Action recorder — turns "it breaks sometimes" into repro steps
+   * ------------------------------------------------------------------ */
+
+  var rec = { active: false, startedAt: 0, steps: [], lastScrollAt: 0, timer: null };
+
+  // Direct text only — a <label> containing a badge shouldn't read "Card masked".
+  function ownText(el) {
+    var out = '';
+    for (var i = 0; i < el.childNodes.length; i++) {
+      if (el.childNodes[i].nodeType === 3) out += el.childNodes[i].nodeValue;
+    }
+    return out.trim().replace(/\s+/g, ' ');
+  }
+
+  // A form control is named by its <label>, never by its own content — the
+  // innerText of a <select> is every option concatenated together.
+  function fieldLabel(el) {
+    if (el.id) {
+      try {
+        var l = document.querySelector('label[for="' + esc(el.id) + '"]');
+        if (l) {
+          var t = ownText(l) || truncate((l.innerText || '').trim().replace(/\s+/g, ' '), 60);
+          if (t) return truncate(t, 60);
+        }
+      } catch (_) {}
+    }
+    var wrap = el.closest ? el.closest('label') : null;
+    if (wrap) {
+      var wt = ownText(wrap);
+      if (wt) return truncate(wt, 60);
+    }
+    return truncate(
+      el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('placeholder') || el.tagName.toLowerCase(),
+      60
+    );
+  }
+
+  function labelFor(el) {
+    if (!el || el.nodeType !== 1) return '';
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return fieldLabel(el);
+    var t = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+    if (!t) t = (el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ');
+    return truncate(t, 60);
+  }
+
+  // Never record a secret. Password fields, opt-in data-sc-mask, and anything
+  // autocomplete says is a card or one-time code.
+  function isMasked(el) {
+    if (!el.getAttribute) return false;
+    if ((el.getAttribute('type') || '').toLowerCase() === 'password') return true;
+    if (el.hasAttribute('data-sc-mask')) return true;
+    return /cc-|credit|card|cvc|cvv|one-time|otp/.test((el.getAttribute('autocomplete') || '').toLowerCase());
+  }
+
+  function step(s) {
+    if (!rec.active) return;
+    s.t = since();
+    s.at = new Date().toISOString();
+    rec.steps.push(s);
+    if (rec.steps.length > 500) rec.steps.shift();
+    paintRecPill();
+  }
+
+  function stepText(s) {
+    switch (s.type) {
+      case 'click':
+        return 'Click ' + (s.label ? '"' + s.label + '"' : '<' + s.tag + '>');
+      case 'input':
+        return 'Type "' + s.value + '" into ' + (s.label || s.selector);
+      case 'select':
+        return 'Choose "' + s.value + '" in ' + (s.label || s.selector);
+      case 'key':
+        return 'Press ' + s.key;
+      case 'scroll':
+        return 'Scroll to y=' + s.y;
+      case 'submit':
+        return 'Submit ' + (s.selector || 'form');
+      case 'navigate':
+        return 'Open ' + s.url;
+      case 'resize':
+        return 'Resize to ' + s.w + 'x' + s.h;
+    }
+    return s.type;
+  }
+
+  var STEP_TAG = { click: 'CLK', input: 'TYPE', select: 'PICK', key: 'KEY', scroll: 'SCRL', submit: 'SUB', navigate: 'NAV', resize: 'SIZE' };
+
+  function onRecClick(e) {
+    var el = e.target;
+    if (!el || el === host || el.nodeType !== 1) return;
+    step({ type: 'click', selector: cssPath(el), tag: el.tagName.toLowerCase(), label: labelFor(el) });
+  }
+
+  function onRecInput(e) {
+    var el = e.target;
+    if (!el || el === host || el.nodeType !== 1 || el.value === undefined) return;
+    var sel = cssPath(el);
+    var kind = el.tagName === 'SELECT' ? 'select' : 'input';
+    var value = isMasked(el) ? '\u2022\u2022\u2022\u2022\u2022\u2022' : truncate(String(el.value), 120);
+
+    // Collapse a burst of keystrokes in one field into a single step. Scrolls
+    // and resizes don't interrupt — an autoscroll landing mid-word must not
+    // split "ahmet@example.com" in two — but a real action does. Blur fires
+    // 'change' after 'input' with an unchanged value; that's a duplicate.
+    var sawAction = false;
+    for (var i = rec.steps.length - 1; i >= 0 && i > rec.steps.length - 12; i--) {
+      var st = rec.steps[i];
+      if (st.type === 'scroll' || st.type === 'resize') continue;
+      if (st.type === kind && st.selector === sel) {
+        if (st.value === value) return; // nothing actually changed
+        if (!sawAction) {
+          // keep the original timestamp: it's when the user started typing
+          // here, and bumping it forward would put the step list out of
+          // chronological order against the network and console entries.
+          st.value = value;
+          paintRecPill();
+          return;
+        }
+        break; // genuinely edited again later in the flow
+      }
+      sawAction = true;
+    }
+    step({ type: kind, selector: sel, label: labelFor(el), value: value });
+  }
+
+  var RECORDED_KEYS = ['Enter', 'Escape', 'Tab', 'Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+  function onRecKey(e) {
+    if (RECORDED_KEYS.indexOf(e.key) === -1) return; // not a keylogger — text arrives via 'input'
+    if (e.target === host) return;
+    step({ type: 'key', key: e.key, selector: e.target && e.target.nodeType === 1 ? cssPath(e.target) : null });
+  }
+
+  function onRecScroll() {
+    var n = now();
+    if (n - rec.lastScrollAt < 500) return;
+    rec.lastScrollAt = n;
+    step({ type: 'scroll', y: Math.round(window.scrollY), x: Math.round(window.scrollX) });
+  }
+
+  function onRecSubmit(e) {
+    step({ type: 'submit', selector: e.target && e.target.nodeType === 1 ? cssPath(e.target) : null });
+  }
+
+  function onRecNav() {
+    step({ type: 'navigate', url: location.href });
+  }
+
+  function onRecResize() {
+    var n = now();
+    if (n - (rec.lastResizeAt || 0) < 500) return;
+    rec.lastResizeAt = n;
+    step({ type: 'resize', w: window.innerWidth, h: window.innerHeight });
+  }
+
+  // SPA route changes look like navigation to a human, so record them as such.
+  if (window.history && history.pushState) {
+    ['pushState', 'replaceState'].forEach(function (m) {
+      var orig = history[m];
+      history[m] = function () {
+        var out = orig.apply(this, arguments);
+        onRecNav();
+        return out;
+      };
+    });
+  }
+
+  var REC_EVENTS = [
+    [document, 'click', onRecClick, true],
+    [document, 'input', onRecInput, true],
+    [document, 'change', onRecInput, true],
+    [document, 'keydown', onRecKey, true],
+    [document, 'submit', onRecSubmit, true],
+    [window, 'scroll', onRecScroll, true],
+    [window, 'resize', onRecResize, false],
+    [window, 'hashchange', onRecNav, false],
+    [window, 'popstate', onRecNav, false]
+  ];
+
+  function startRecording() {
+    if (rec.active) return;
+    closeMenu();
+    stopPicking();
+    closePanel();
+    rec.active = true;
+    rec.startedAt = now();
+    rec.steps = [];
+    step({ type: 'navigate', url: location.href });
+    REC_EVENTS.forEach(function (e) { e[0].addEventListener(e[1], e[2], e[3]); });
+    ui.launch.classList.add('rec');
+    ui.launch.textContent = '\u25A0';
+    ui.launch.title = 'Stop recording';
+    ui.recPill.style.display = 'flex';
+    rec.timer = setInterval(paintRecPill, 1000);
+    paintRecPill();
+    toast('Recording. Reproduce the bug, then press stop.', 3200);
+  }
+
+  function stopRecording(openComposer) {
+    if (!rec.active) return;
+    rec.active = false;
+    clearInterval(rec.timer);
+    REC_EVENTS.forEach(function (e) { e[0].removeEventListener(e[1], e[2], e[3]); });
+    ui.launch.classList.remove('rec');
+    ui.launch.textContent = '\uD83D\uDCAC';
+    ui.launch.title = 'Comment (' + cfg.hotkey + ')';
+    ui.recPill.style.display = 'none';
+    if (openComposer !== false) openPanel(null, { recording: true });
+  }
+
+  function recElapsed() {
+    var sec = Math.floor((now() - rec.startedAt) / 1000);
+    return Math.floor(sec / 60) + ':' + ('0' + (sec % 60)).slice(-2);
+  }
+
+  function paintRecPill() {
+    if (!ui.recPill || !rec.active) return;
+    ui.recCount.textContent = recElapsed() + ' \u00B7 ' + rec.steps.length + ' step' + (rec.steps.length === 1 ? '' : 's');
+  }
+
+  /* ------------------------------------------------------------------ *
    * Element description
    * ------------------------------------------------------------------ */
 
@@ -624,7 +846,65 @@
     '.pins{position:absolute;inset:0;pointer-events:none}',
     '.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#18181b;color:#fafafa;',
     'border:1px solid #3f3f46;padding:9px 16px;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.4);',
-    'display:none;pointer-events:none}'
+    'display:none;pointer-events:none}',
+
+    /* FAB mode menu */
+    /* the menu must set its own color, not inherit: nothing up the shadow
+       tree defines one, so `inherit` resolves to the UA default black. */
+    '.menu{position:fixed;right:18px;bottom:72px;width:236px;background:#18181b;color:#fafafa;',
+    'border:1px solid #3f3f46;border-radius:12px;padding:5px;display:none;pointer-events:auto;',
+    'box-shadow:0 18px 50px rgba(0,0,0,.5)}',
+    '.menu.light{background:#fff;color:#18181b;border-color:#e4e4e7}',
+    '.menu.light .mi small{color:#71717a}',
+    '.mi{display:flex;gap:10px;align-items:flex-start;width:100%;background:none;border:none;color:inherit;',
+    "font:inherit;text-align:left;padding:9px 10px;border-radius:8px;cursor:pointer}",
+    '.mi:hover{background:#27272a}',
+    '.menu.light .mi:hover{background:#f4f4f5}',
+    '.mi .ico{flex:none;width:18px;text-align:center;font-size:13px;line-height:1.5}',
+    '.mi .tt{flex:1}',
+    '.mi b{display:block;font-weight:600;font-size:12.5px}',
+    '.mi small{display:block;color:#a1a1aa;font-size:11px;line-height:1.35;margin-top:1px}',
+    '.mi .kb{flex:none;font:10.5px/1.6 ui-monospace,Menlo,monospace;color:#71717a}',
+
+    /* recording state */
+    '.launch.rec{background:#ef4444;box-shadow:0 6px 22px rgba(239,68,68,.5);font-size:14px}',
+    '.recpill{position:fixed;right:72px;bottom:26px;display:none;align-items:center;gap:7px;',
+    'background:#18181b;color:#fafafa;border:1px solid #ef4444;padding:7px 12px;border-radius:999px;',
+    "font:600 12px/1 ui-monospace,Menlo,monospace;pointer-events:auto;cursor:pointer;",
+    'box-shadow:0 8px 26px rgba(0,0,0,.4);white-space:nowrap}',
+    '.recpill .rdot{width:8px;height:8px;border-radius:50%;background:#ef4444;flex:none}',
+    '@media (prefers-reduced-motion:no-preference){',
+    '.recpill .rdot{animation:scblink 1.4s ease-in-out infinite}}',
+    '@keyframes scblink{0%,100%{opacity:1}50%{opacity:.25}}',
+
+    /* pickable capture groups */
+    '.grp{border:1px solid #3f3f46;border-radius:8px;margin-bottom:7px;overflow:hidden}',
+    '.panel.light .grp{border-color:#e4e4e7}',
+    '.ghead{display:flex;align-items:center;gap:8px;padding:7px 9px;cursor:pointer;user-select:none}',
+    '.ghead:hover{background:#212125}',
+    '.panel.light .ghead:hover{background:#f4f4f5}',
+    '.ghead input{accent-color:#8b5cf6;margin:0;cursor:pointer;flex:none}',
+    '.ghead .gname{font-size:12px;font-weight:500}',
+    '.ghead .cnt{margin-left:auto;font:10.5px/1 ui-monospace,Menlo,monospace;color:#a1a1aa}',
+    '.ghead .car{font-size:8px;color:#71717a;transition:transform .15s;flex:none;width:8px}',
+    '.grp.open .car{transform:rotate(90deg)}',
+    '.grp.empty{opacity:.45}',
+    '.glist{display:none;max-height:148px;overflow:auto;padding:3px;border-top:1px solid #3f3f46}',
+    '.panel.light .glist{border-color:#e4e4e7}',
+    '.grp.open .glist{display:block}',
+    '.gi{display:flex;gap:7px;align-items:flex-start;padding:4px 5px;border-radius:5px;cursor:pointer}',
+    '.gi:hover{background:#27272a}',
+    '.panel.light .gi:hover{background:#f4f4f5}',
+    '.gi input{accent-color:#8b5cf6;margin:2px 0 0;flex:none;cursor:pointer}',
+    '.gi .lv{flex:none;font:700 9px/1.7 ui-monospace,Menlo,monospace;padding:0 4px;border-radius:3px;',
+    'background:#3f3f46;color:#a1a1aa;min-width:31px;text-align:center}',
+    '.gi .lv.err{background:#450a0a;color:#fca5a5}',
+    '.gi .lv.ok{background:#052e16;color:#86efac}',
+    '.gi .lv.warn{background:#422006;color:#fcd34d}',
+    '.gi .lv.acc{background:rgba(139,92,246,.2);color:#c4b5fd}',
+    '.gi .tx{flex:1;min-width:0;font:11px/1.5 ui-monospace,Menlo,monospace;color:#d4d4d8;',
+    'overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '.panel.light .gi .tx{color:#3f3f46}'
   ].join('');
 
   function h(tag, attrs, kids) {
@@ -657,32 +937,51 @@
     ui.pins = h('div', { class: 'pins' });
     ui.toast = h('div', { class: 'toast' });
 
-    ui.launch = h('button', { class: 'launch', title: 'Comment (' + cfg.hotkey + ')', text: '💬', onclick: function () { startPicking(); } });
+    ui.launch = h('button', {
+      class: 'launch',
+      title: 'Comment (' + cfg.hotkey + ')',
+      text: '\uD83D\uDCAC',
+      onclick: function () {
+        if (rec.active) return stopRecording();
+        toggleMenu();
+      }
+    });
+
+    ui.recCount = h('span', { text: '0:00' });
+    ui.recPill = h('div', {
+      class: 'recpill',
+      title: 'Stop recording',
+      onclick: function () { stopRecording(); }
+    }, [h('span', { class: 'rdot' }), ui.recCount, h('span', { text: '\u00B7 stop' })]);
+
+    ui.menu = h('div', { class: 'menu' + (cfg.theme === 'light' ? ' light' : '') }, [
+      menuItem('\u25CE', 'Pick an element', 'Click the thing that looks wrong', cfg.hotkey, function () {
+        closeMenu();
+        startPicking();
+      }),
+      menuItem('\u270E', 'Report this page', 'No element \u2014 just the page and its logs', cfg.pageHotkey, function () {
+        closeMenu();
+        openPanel(null);
+      }),
+      menuItem('\u25CF', 'Record actions', 'Capture the steps that trigger it', cfg.recordHotkey, function () {
+        startRecording();
+      })
+    ]);
 
     ui.selBox = h('div', { class: 'sel' });
     ui.textarea = h('textarea', { placeholder: "What's wrong / what should change?" });
-    ui.optLogs = h('input', { type: 'checkbox', checked: 'checked' });
-    ui.optNet = h('input', { type: 'checkbox', checked: 'checked' });
-    ui.optErr = h('input', { type: 'checkbox', checked: 'checked' });
     ui.optShot = h('input', { type: 'checkbox' });
     if (cfg.screenshot === 'on') ui.optShot.checked = true;
 
-    ui.nLogs = h('span', { class: 'n' });
-    ui.nNet = h('span', { class: 'n' });
-    ui.nErr = h('span', { class: 'n' });
-
+    ui.groupBox = h('div', {});
     ui.shot = h('img', { class: 'shot' });
     ui.msg = h('div', { class: 'msg' });
     ui.sendBtn = h('button', { class: 'send', text: 'Send', onclick: submit });
     ui.pickBtn = h('button', { class: 'ghost', text: 'Pick element', onclick: function () { closePanel(); startPicking(); } });
 
-    var opts = h('div', { class: 'opts' }, [
-      h('label', { class: 'opt' }, [ui.optLogs, h('span', { text: 'console' }), ui.nLogs]),
-      h('label', { class: 'opt' }, [ui.optNet, h('span', { text: 'network' }), ui.nNet]),
-      h('label', { class: 'opt' }, [ui.optErr, h('span', { text: 'errors' }), ui.nErr])
-    ]);
+    var opts = h('div', { class: 'opts' });
     if (cfg.screenshot !== 'off')
-      opts.appendChild(h('label', { class: 'opt' }, [ui.optShot, h('span', { text: 'screenshot' })]));
+      opts.appendChild(h('label', { class: 'opt' }, [ui.optShot, h('span', { text: 'attach screenshot' })]));
 
     ui.panel = h('div', { class: 'panel' + (cfg.theme === 'light' ? ' light' : '') }, [
       h('div', { class: 'head' }, [
@@ -693,6 +992,7 @@
       h('div', { class: 'body' }, [
         ui.selBox,
         ui.textarea,
+        ui.groupBox,
         opts,
         h('div', { class: 'row' }, [ui.sendBtn, ui.pickBtn]),
         ui.shot,
@@ -705,7 +1005,11 @@
     ui.layer.appendChild(ui.tag);
     ui.layer.appendChild(ui.hint);
     ui.layer.appendChild(ui.toast);
-    if (cfg.button) ui.layer.appendChild(ui.launch);
+    if (cfg.button) {
+      ui.layer.appendChild(ui.launch);
+      ui.layer.appendChild(ui.menu);
+    }
+    ui.layer.appendChild(ui.recPill);
     ui.layer.appendChild(ui.panel);
     root.appendChild(ui.layer);
 
@@ -717,6 +1021,52 @@
     ui.toast.style.display = 'block';
     clearTimeout(toast._t);
     toast._t = setTimeout(function () { ui.toast.style.display = 'none'; }, ms || 2200);
+  }
+
+  function menuItem(icon, title, sub, key, onclick) {
+    return h('button', { class: 'mi', onclick: onclick }, [
+      h('span', { class: 'ico', text: icon }),
+      h('span', { class: 'tt' }, [h('b', { text: title }), h('small', { text: sub })]),
+      h('span', { class: 'kb', text: shortKey(key) })
+    ]);
+  }
+
+  function shortKey(spec) {
+    if (!spec) return '';
+    var mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    return String(spec)
+      .split('+')
+      .map(function (p) {
+        if (p === 'ctrl' || p === 'cmd' || p === 'mod') return mac ? '\u2318' : 'Ctrl';
+        if (p === 'shift') return '\u21E7';
+        if (p === 'alt') return mac ? '\u2325' : 'Alt';
+        return p.toUpperCase();
+      })
+      .join(mac ? '' : '+');
+  }
+
+  function openMenu() {
+    if (!ui.menu) return;
+    ui.menu.style.display = 'block';
+    document.addEventListener('click', onOutsideMenu, true);
+  }
+
+  function closeMenu() {
+    if (!ui.menu) return;
+    ui.menu.style.display = 'none';
+    document.removeEventListener('click', onOutsideMenu, true);
+  }
+
+  function menuOpen() {
+    return !!(ui.menu && ui.menu.style.display === 'block');
+  }
+
+  function toggleMenu() {
+    menuOpen() ? closeMenu() : openMenu();
+  }
+
+  function onOutsideMenu(e) {
+    if (e.target !== host) closeMenu(); // events from our shadow root retarget to the host
   }
 
   /* ---------------- picking ---------------- */
@@ -790,45 +1140,144 @@
 
   /* ---------------- panel ---------------- */
 
-  function openPanel(el) {
+  // Each capture group is a list of individually selectable entries. The
+  // buffers are frozen when the panel opens so indices can't shift underneath
+  // the checkboxes while you're deciding what to send.
+  var groups = {};
+
+  function makeGroup(key, name, items, render, openByDefault) {
+    var boxes = [];
+    var master = h('input', { type: 'checkbox', checked: 'checked' });
+    var list = h('div', { class: 'glist' });
+
+    items.forEach(function (item, i) {
+      var meta = render(item);
+      var cb = h('input', { type: 'checkbox', checked: 'checked' });
+      cb.addEventListener('change', function () {
+        master.checked = boxes.some(function (b) { return b.checked; });
+      });
+      boxes.push(cb);
+      list.appendChild(
+        h('label', { class: 'gi' }, [
+          cb,
+          h('span', { class: 'lv ' + (meta.cls || ''), text: meta.tag }),
+          h('span', { class: 'tx', text: meta.text, title: meta.text })
+        ])
+      );
+      void i;
+    });
+
+    var grp = h('div', { class: 'grp' + (items.length ? '' : ' empty') + (openByDefault && items.length ? ' open' : '') });
+    var head = h('div', { class: 'ghead' }, [
+      master,
+      h('span', { class: 'car', text: '\u25B6' }),
+      h('span', { class: 'gname', text: name }),
+      h('span', { class: 'cnt', text: items.length ? items.length + ' captured' : 'none' })
+    ]);
+
+    master.addEventListener('click', function (e) { e.stopPropagation(); });
+    master.addEventListener('change', function () {
+      boxes.forEach(function (b) { b.checked = master.checked; });
+    });
+    head.addEventListener('click', function () {
+      if (items.length) grp.classList.toggle('open');
+    });
+
+    grp.appendChild(head);
+    grp.appendChild(list);
+
+    return {
+      el: grp,
+      pick: function () {
+        return items.filter(function (_, i) { return boxes[i].checked; });
+      }
+    };
+  }
+
+  function netMeta(n) {
+    return {
+      cls: n.status == null ? 'warn' : n.ok ? 'ok' : 'err',
+      tag: n.status == null ? '\u00B7\u00B7\u00B7' : String(n.status),
+      text: n.method + ' ' + n.url + (n.ms == null ? '' : '  ' + n.ms + 'ms')
+    };
+  }
+
+  function openPanel(el, opts) {
+    opts = opts || {};
+    closeMenu();
     target = el && el.nodeType === 1 ? el : null;
-    ui.selBox.textContent = target ? cssPath(target) : location.pathname + '  (page-level report)';
+
+    ui.selBox.textContent = target
+      ? cssPath(target)
+      : opts.recording
+      ? rec.steps.length + ' recorded steps on ' + location.pathname
+      : location.pathname + '  (page-level report)';
+
     ui.textarea.value = '';
+    ui.textarea.placeholder = opts.recording
+      ? 'What went wrong during those steps?'
+      : "What's wrong / what should change?";
     ui.msg.textContent = '';
     ui.msg.className = 'msg';
     ui.shot.style.display = 'none';
     ui.shot.removeAttribute('src');
     ui.sendBtn.disabled = false;
     ui.sendBtn.textContent = 'Send';
-    ui.nLogs.textContent = '(' + logs.items.length + ')';
-    ui.nNet.textContent = '(' + network.items.length + ')';
-    ui.nErr.textContent = '(' + errors.items.length + ')';
-    if (errors.items.length) ui.optErr.checked = true;
-    if (cfg.button) ui.launch.style.display = 'none';
+
+    // freeze the buffers for the life of this panel
+    groups = {};
+    ui.groupBox.innerHTML = '';
+    if (opts.recording || rec.steps.length) {
+      groups.steps = makeGroup('steps', 'Steps', rec.steps.slice(), function (st) {
+        return { cls: 'acc', tag: STEP_TAG[st.type] || 'STEP', text: stepText(st) };
+      }, !!opts.recording);
+      ui.groupBox.appendChild(groups.steps.el);
+    }
+    groups.errors = makeGroup('errors', 'Errors', errors.all(), function (e) {
+      return { cls: 'err', tag: 'ERR', text: e.message };
+    }, errors.items.length > 0 && !opts.recording);
+    groups.network = makeGroup('network', 'Network', network.all(), netMeta, false);
+    groups.console = makeGroup('console', 'Console', logs.all(), function (c) {
+      return {
+        cls: c.level === 'error' ? 'err' : c.level === 'warn' ? 'warn' : '',
+        tag: c.level.slice(0, 4).toUpperCase(),
+        text: c.text
+      };
+    }, false);
+    [groups.errors, groups.network, groups.console].forEach(function (g) {
+      ui.groupBox.appendChild(g.el);
+    });
+
+    if (cfg.button) {
+      ui.launch.style.display = 'none';
+      closeMenu();
+    }
     ui.panel.style.display = 'block';
     setTimeout(function () { ui.textarea.focus(); }, 30);
   }
 
   function closePanel() {
     ui.panel.style.display = 'none';
-    if (cfg.button) ui.launch.style.display = '';
+    if (cfg.button && !rec.active) ui.launch.style.display = '';
     target = null;
   }
 
   function buildPayload(comment, screenshot) {
+    var steps = groups.steps ? groups.steps.pick() : [];
     return {
       id: uid(),
       v: VERSION,
-      type: target ? 'element' : 'page',
+      type: steps.length ? 'recording' : target ? 'element' : 'page',
       project: cfg.project,
       createdAt: new Date().toISOString(),
       comment: comment,
       page: pageInfo(),
       element: target ? describeElement(target) : null,
       screenshot: screenshot || null,
-      console: ui.optLogs.checked ? logs.all() : [],
-      network: ui.optNet.checked ? network.all() : [],
-      errors: ui.optErr.checked ? errors.all() : []
+      steps: steps,
+      console: groups.console ? groups.console.pick() : [],
+      network: groups.network ? groups.network.pick() : [],
+      errors: groups.errors ? groups.errors.pick() : []
     };
   }
 
@@ -949,6 +1398,7 @@
     'keydown',
     function (e) {
       if (e.key === 'Escape') {
+        if (menuOpen()) { closeMenu(); return; }
         if (picking) { stopPicking(); return; }
         if (ui.panel && ui.panel.style.display === 'block') { closePanel(); return; }
       }
@@ -959,6 +1409,9 @@
         e.preventDefault();
         stopPicking();
         openPanel(null);
+      } else if (cfg.recordHotkey && matchHotkey(e, cfg.recordHotkey)) {
+        e.preventDefault();
+        rec.active ? stopRecording() : startRecording();
       }
     },
     true
@@ -974,6 +1427,13 @@
     open: function (el) { openPanel(el || null); },
     pick: startPicking,
     cancel: stopPicking,
+    menu: function () { toggleMenu(); },
+    record: startRecording,
+    stop: function (openComposer) { stopRecording(openComposer); },
+    recording: function () {
+      return rec.active ? { since: rec.startedAt, steps: rec.steps.length } : null;
+    },
+    steps: function () { return rec.steps.slice(); },
     /** Send a report programmatically, no UI. */
     report: function (comment, opts) {
       opts = opts || {};
@@ -988,6 +1448,7 @@
         page: pageInfo(),
         element: opts.element ? describeElement(opts.element) : null,
         screenshot: opts.screenshot || null,
+        steps: opts.steps === false ? [] : rec.steps.slice(),
         console: opts.console === false ? [] : logs.all(),
         network: opts.network === false ? [] : network.all(),
         errors: opts.errors === false ? [] : errors.all()
@@ -996,7 +1457,13 @@
       return send(payload).then(function (r) { return { id: payload.id, via: r.via }; });
     },
     snapshot: function () {
-      return { page: pageInfo(), console: logs.all(), network: network.all(), errors: errors.all() };
+      return {
+        page: pageInfo(),
+        console: logs.all(),
+        network: network.all(),
+        errors: errors.all(),
+        steps: rec.steps.slice()
+      };
     },
     screenshot: captureScreenshot,
     clear: function () { logs.clear(); network.clear(); errors.clear(); }
@@ -1009,7 +1476,7 @@
     if (document.getElementById(HOST_ID)) return;
     buildUI();
     rawLog(
-      '%c[supercomment]%c ready · ' + cfg.hotkey + ' to comment · ' + cfg.pageHotkey + ' to report' +
+      '%c[supercomment]%c ready · ' + cfg.hotkey + ' pick · ' + cfg.pageHotkey + ' report · ' + cfg.recordHotkey + ' record' +
         (cfg.endpoint ? ' · → ' + cfg.endpoint : ' · no endpoint (clipboard fallback)'),
       'color:#8b5cf6;font-weight:bold',
       'color:inherit'

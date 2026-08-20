@@ -47,9 +47,39 @@ function fence(lang, body) {
   return '```' + lang + '\n' + body + '\n```';
 }
 
+function stepLine(s) {
+  switch (s.type) {
+    case 'click':
+      return `Click ${s.label ? `"${s.label}"` : `<${s.tag}>`}` + (s.selector ? `  \`${s.selector}\`` : '');
+    case 'input':
+      return `Type "${s.value}" into ${s.label || s.selector}`;
+    case 'select':
+      return `Choose "${s.value}" in ${s.label || s.selector}`;
+    case 'key':
+      return `Press ${s.key}`;
+    case 'scroll':
+      return `Scroll to y=${s.y}`;
+    case 'submit':
+      return `Submit ${s.selector || 'form'}`;
+    case 'navigate':
+      return `Open ${s.url}`;
+    case 'resize':
+      return `Resize to ${s.w}x${s.h}`;
+    default:
+      return s.type;
+  }
+}
+
+function stamp(ms) {
+  if (ms == null) return '';
+  const sec = Math.floor(ms / 1000);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
 function toMarkdown(r) {
   const L = [];
-  const kind = r.type === 'element' ? 'Element comment' : 'Page report';
+  const kind =
+    r.type === 'recording' ? 'Recorded session' : r.type === 'element' ? 'Element comment' : 'Page report';
   L.push(`# ${kind} — ${r.id}`);
   L.push('');
   L.push(`> ${String(r.comment || '').split('\n').join('\n> ')}`);
@@ -79,6 +109,15 @@ function toMarkdown(r) {
     L.push('');
     L.push('## Screenshot');
     L.push(`![screenshot](./screenshots/${path.basename(r.screenshotFile)})`);
+  }
+
+  if (r.steps && r.steps.length) {
+    L.push('');
+    L.push('## Steps to reproduce');
+    L.push('');
+    r.steps.forEach((s, i) => {
+      L.push(`${i + 1}. ${stepLine(s)}${s.t == null ? '' : `  _(${stamp(s.t)})_`}`);
+    });
   }
 
   if (r.errors && r.errors.length) {
@@ -167,6 +206,7 @@ function summary(r) {
     url: r.page && r.page.url,
     selector: r.element && r.element.selector,
     counts: {
+      steps: (r.steps || []).length,
       console: (r.console || []).length,
       network: (r.network || []).length,
       errors: (r.errors || []).length
@@ -215,6 +255,7 @@ fetch('reports').then(r=>r.json()).then(rs=>{
     +'<h2>'+String(r.comment).replace(/</g,'&lt;')+'</h2>'
     +'<div class=meta>'+(r.selector||r.type)+' &middot; '+r.url+' &middot; '+new Date(r.createdAt).toLocaleString()+'</div>'
     +'<div style=margin-top:8px>'
+    +(r.counts.steps?'<span class=badge>'+r.counts.steps+' steps</span>':'')
     +'<span class="badge'+(r.counts.errors?' err':'')+'">'+r.counts.errors+' errors</span>'
     +'<span class=badge>'+r.counts.network+' net</span>'
     +'<span class=badge>'+r.counts.console+' logs</span>'
@@ -282,7 +323,12 @@ const server = http.createServer((req, res) => {
       fs.writeFileSync(path.join(DIR, r.id + '.json'), JSON.stringify(r, null, 2));
       fs.writeFileSync(mdPath, toMarkdown(r));
 
-      const tag = r.type === 'element' ? (r.element && r.element.selector) || 'element' : 'page';
+      const tag =
+        r.type === 'recording'
+          ? `${(r.steps || []).length} steps`
+          : r.type === 'element'
+          ? (r.element && r.element.selector) || 'element'
+          : 'page';
       const errs = (r.errors || []).length;
       console.log(
         '\n' + C.purple + '* ' + r.id + C.off + '  ' + tag +
