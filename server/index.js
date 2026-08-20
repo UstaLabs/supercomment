@@ -205,11 +205,11 @@ h1{font-size:16px;color:#a78bfa;margin:0 0 16px}
 a{color:#a78bfa}
 .empty{color:#52525b}
 </style>
-<h1>supercomment inbox</h1><div id=list class=empty>loading&hellip;</div>
+<h1>supercomment inbox &nbsp;<a href="./" style="font-size:12px;font-weight:400">&larr; demo</a></h1><div id=list class=empty>loading&hellip;</div>
 <script>
-fetch('/reports').then(r=>r.json()).then(rs=>{
+fetch('reports').then(r=>r.json()).then(rs=>{
   var el=document.getElementById('list');
-  if(!rs.length){el.textContent='No reports yet. Trigger one with Ctrl+Shift+K on your page.';return}
+  if(!rs.length){el.textContent='No reports yet. Open the demo and press Ctrl+Shift+K.';return}
   el.className='';
   el.innerHTML=rs.map(function(r){return '<div class=r>'
     +'<h2>'+String(r.comment).replace(/</g,'&lt;')+'</h2>'
@@ -341,23 +341,27 @@ const server = http.createServer((req, res) => {
     return res.end(fs.readFileSync(f));
   }
 
-  if (req.method === 'GET' && (p === '/demo' || p === '/demo/')) {
+  // The demo site is the front door; the inbox viewer lives at /inbox.
+  if (req.method === 'GET' && (p === '/' || p === '/demo' || p === '/demo/')) {
     const f = path.join(__dirname, '..', 'demo', 'index.html');
-    if (!fs.existsSync(f)) return text(res, 404, 'demo not found');
+    if (!fs.existsSync(f)) return text(res, 200, VIEWER_HTML, 'text/html');
     return text(res, 200, fs.readFileSync(f, 'utf8'), 'text/html');
   }
 
-  if (p === '/' && req.method === 'GET') return text(res, 200, VIEWER_HTML, 'text/html');
+  if (req.method === 'GET' && (p === '/inbox' || p === '/inbox/')) {
+    return text(res, 200, VIEWER_HTML, 'text/html');
+  }
 
   json(res, 404, {
     error: 'not found',
-    try: ['POST /report', 'GET /reports', 'GET /inbox.md', 'GET /supercomment.js', 'GET /']
+    try: ['POST /report', 'GET /reports', 'GET /inbox', 'GET /inbox.md', 'GET /supercomment.js', 'GET /']
   });
 });
 
 server.listen(PORT, () => {
   console.log('\n' + C.purple + ' supercomment' + C.off + ' server');
-  console.log('  inbox     http://localhost:' + PORT + '/');
+  console.log('  demo      http://localhost:' + PORT + '/');
+  console.log('  inbox     http://localhost:' + PORT + '/inbox');
   console.log('  endpoint  http://localhost:' + PORT + '/report');
   console.log('  client    http://localhost:' + PORT + '/supercomment.js');
   console.log('  files     ' + DIR);

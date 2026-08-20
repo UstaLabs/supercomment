@@ -23,7 +23,7 @@ Then, as the **first** thing in your page's `<head>`:
 
 Open your page and hit <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>.
 
-Try it without your own page: `npx supercomment` then open `http://localhost:4321/demo`.
+Try it without your own page: `npx supercomment` then open `http://localhost:4321` — the demo site has buttons that dirty each capture buffer, a live readout of what's in them, and a deliberately broken pricing card to report.
 
 ## Hotkeys
 
@@ -105,9 +105,9 @@ Each report is written twice: `<id>.json` (full fidelity) and `<id>.md` (what yo
 | `GET /reports/:id` | One report (`?format=md` for Markdown). |
 | `DELETE /reports/:id` | Delete one. |
 | `GET /inbox.md` | **All unread reports as one Markdown doc** (`?markRead=1` to consume, `?all=1` for everything). |
-| `GET /` | Minimal HTML inbox viewer. |
+| `GET /` | The demo site. |
+| `GET /inbox` | Minimal HTML inbox viewer. |
 | `GET /supercomment.js` | The client library. |
-| `GET /demo` | The demo page. |
 
 ### Feeding an agent
 
@@ -118,6 +118,10 @@ curl -s 'http://localhost:4321/inbox.md?markRead=1'
 ```
 
 or just point the agent at the folder — `.supercomment/*.md` is already the format you'd want to paste.
+
+### Selectors
+
+Selectors stop climbing at the nearest `id`, and only add `:nth-of-type` when tag + class isn't already unique among siblings — so you get `section#specimen > div.spec.off > p.price`, not a 200-character index chain. Every generated selector is verified to resolve back to the element it describes before it's sent.
 
 ## Screenshots
 

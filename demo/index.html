@@ -3,62 +3,485 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>supercomment demo</title>
+<title>supercomment</title>
+<meta name="description" content="Click any element on any page, write a comment, and send the whole context — selector, console, network, errors — to your coding agent.">
 
-<!-- FIRST thing in <head>: capture starts before any app code runs -->
-<script src="/supercomment.js" data-endpoint="/report" data-project="demo"></script>
+<!-- FIRST in <head>, on purpose: capture is installed before any other script runs. -->
+<script src="supercomment.js" data-endpoint="report" data-project="demo-site"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
 
 <style>
-  body{font:15px/1.6 ui-sans-serif,-apple-system,'Segoe UI',Roboto,sans-serif;
-       background:#0b0b0d;color:#e4e4e7;margin:0;padding:48px 24px;display:flex;justify-content:center}
-  main{max-width:640px;width:100%}
-  h1{color:#a78bfa;font-size:24px;margin:0 0 4px}
-  p.sub{color:#71717a;margin:0 0 28px}
-  .card{border:1px solid #27272a;background:#131316;border-radius:12px;padding:18px;margin-bottom:14px}
-  h2{font-size:15px;margin:0 0 8px}
-  kbd{background:#27272a;border:1px solid #3f3f46;border-bottom-width:2px;border-radius:5px;
-      padding:1px 6px;font:12px ui-monospace,Menlo,monospace}
-  button{background:#8b5cf6;color:#fff;border:none;border-radius:8px;padding:9px 14px;
-         font:600 13px/1 inherit;cursor:pointer;margin-right:8px}
-  button.alt{background:#3f3f46}
-  .broken{color:#f87171}
+/* ── tokens ─────────────────────────────────────────────────────────── */
+:root{
+  --paper:#ECEFEE;
+  --panel:#F6F8F7;
+  --sunk:#E1E6E4;
+  --ink:#12161C;
+  --ink-2:#4A555F;
+  --ink-3:#7A868F;
+  --rule:rgba(18,22,28,.14);
+  --grid:rgba(18,22,28,.055);
+  --accent:#6C4CF1;
+  --accent-soft:rgba(108,76,241,.12);
+  --accent-ink:#fff;
+  --bad:#C22B4C;
+  --bad-soft:rgba(194,43,76,.13);
+  --good:#1B6B51;
+  --good-soft:rgba(27,107,81,.13);
+  --warn:#9A6112;
+  --warn-soft:rgba(154,97,18,.14);
+  --shadow:0 1px 0 rgba(18,22,28,.05), 0 12px 34px -18px rgba(18,22,28,.5);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0E1216;
+    --panel:#161B21;
+    --sunk:#1E242B;
+    --ink:#E7ECEA;
+    --ink-2:#A3AEB6;
+    --ink-3:#6F7B84;
+    --rule:rgba(231,236,234,.16);
+    --grid:rgba(231,236,234,.06);
+    --accent:#9B85FF;
+    --accent-soft:rgba(155,133,255,.16);
+    --accent-ink:#0E1216;
+    --bad:#FF7B95;
+    --bad-soft:rgba(255,123,149,.15);
+    --good:#5FD3AC;
+    --good-soft:rgba(95,211,172,.15);
+    --warn:#E0A64B;
+    --warn-soft:rgba(224,166,75,.15);
+    --shadow:0 1px 0 rgba(0,0,0,.4), 0 16px 40px -20px #000;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0E1216;
+  --panel:#161B21;
+  --sunk:#1E242B;
+  --ink:#E7ECEA;
+  --ink-2:#A3AEB6;
+  --ink-3:#6F7B84;
+  --rule:rgba(231,236,234,.16);
+  --grid:rgba(231,236,234,.06);
+  --accent:#9B85FF;
+  --accent-soft:rgba(155,133,255,.16);
+  --accent-ink:#0E1216;
+  --bad:#FF7B95;
+  --bad-soft:rgba(255,123,149,.15);
+  --good:#5FD3AC;
+  --good-soft:rgba(95,211,172,.15);
+  --warn:#E0A64B;
+  --warn-soft:rgba(224,166,75,.15);
+  --shadow:0 1px 0 rgba(0,0,0,.4), 0 16px 40px -20px #000;
+}
+
+/* ── base ───────────────────────────────────────────────────────────── */
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background-color:var(--paper);
+  background-image:
+    repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(to bottom, var(--grid) 0 1px, transparent 1px 64px);
+  color:var(--ink);
+  font:400 17px/1.65 Newsreader, Georgia, serif;
+  font-optical-sizing:auto;
+}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px}
+h1,h2,h3,.ui{font-family:Archivo, "Helvetica Neue", Arial, sans-serif}
+h1,h2,h3{text-wrap:balance;margin:0}
+code,kbd,.mono{font-family:"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+
+/* eyebrow = the section's real selector path */
+.path{
+  font:500 11.5px/1 "JetBrains Mono", monospace;
+  color:var(--ink-3);letter-spacing:.02em;
+  display:flex;align-items:center;gap:9px;margin-bottom:14px;
+}
+.path::after{content:"";flex:1;height:1px;background:var(--rule)}
+
+/* card with selection-marquee corner ticks */
+.card{
+  position:relative;background:var(--panel);
+  border:1px solid var(--rule);border-radius:2px;
+  padding:22px 24px;box-shadow:var(--shadow);
+}
+.card::before,.card::after{
+  content:"";position:absolute;width:9px;height:9px;pointer-events:none;
+  border:1.5px solid var(--accent);opacity:.55;
+}
+.card::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.card::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+
+section{padding:64px 0;border-top:1px solid var(--rule)}
+section:first-of-type{border-top:0}
+
+/* ── masthead ───────────────────────────────────────────────────────── */
+header{padding:70px 0 8px}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.brand h1{font-size:clamp(38px,7vw,64px);font-weight:700;letter-spacing:-.035em;line-height:1}
+.ver{font:500 12px/1 "JetBrains Mono",monospace;color:var(--accent);
+     background:var(--accent-soft);padding:5px 8px;border-radius:2px}
+.thesis{
+  font-size:clamp(20px,2.6vw,26px);line-height:1.45;color:var(--ink-2);
+  max-width:36ch;margin:22px 0 0;
+}
+.thesis em{font-style:italic;color:var(--ink)}
+.lead{max-width:62ch;color:var(--ink-2);margin:18px 0 0}
+
+.snippet{
+  margin-top:30px;background:var(--sunk);border:1px solid var(--rule);border-radius:2px;
+  padding:14px 16px;overflow-x:auto;
+  font:400 13px/1.7 "JetBrains Mono",monospace;color:var(--ink);white-space:pre;
+}
+.snippet .k{color:var(--accent)}
+.snippet .c{color:var(--ink-3)}
+.snippet .q{color:var(--good)}
+
+.keyline{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:24px;
+         font-family:Archivo,sans-serif;font-size:14px;color:var(--ink-2)}
+kbd{
+  background:var(--panel);border:1px solid var(--rule);border-bottom-width:2px;
+  border-radius:4px;padding:3px 7px;font-size:12px;font-weight:500;color:var(--ink);
+}
+.status{
+  display:inline-flex;align-items:center;gap:7px;font:500 12px/1 "JetBrains Mono",monospace;
+  color:var(--good);background:var(--good-soft);padding:6px 10px;border-radius:2px;
+}
+.status .led{width:7px;height:7px;border-radius:50%;background:var(--good)}
+@media (prefers-reduced-motion:no-preference){
+  .status .led{animation:pulse 2.4s ease-in-out infinite}
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── live capture readout ───────────────────────────────────────────── */
+.rig{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media (max-width:760px){.rig{grid-template-columns:1fr}}
+
+.h3{font-size:17px;font-weight:600;letter-spacing:-.01em;margin-bottom:5px}
+.note{font-size:14.5px;color:var(--ink-2);margin:0 0 16px;max-width:52ch}
+
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+button.act{
+  font:500 13px/1 Archivo,sans-serif;cursor:pointer;
+  background:var(--panel);color:var(--ink);
+  border:1px solid var(--rule);border-radius:2px;padding:10px 13px;
+  transition:border-color .15s, color .15s, transform .1s;
+}
+button.act:hover{border-color:var(--accent);color:var(--accent)}
+button.act:active{transform:translateY(1px)}
+button.act.bad:hover{border-color:var(--bad);color:var(--bad)}
+
+.meters{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);
+        border:1px solid var(--rule);border-radius:2px;overflow:hidden;margin-bottom:14px}
+.meter{background:var(--panel);padding:12px 13px}
+.meter .n{font:700 26px/1 "JetBrains Mono",monospace;font-variant-numeric:tabular-nums;
+          letter-spacing:-.02em;display:block}
+.meter .l{font:500 10.5px/1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:.09em;
+          color:var(--ink-3);margin-top:6px;display:block}
+.meter.hot .n{color:var(--bad)}
+
+.tape{
+  background:var(--sunk);border:1px solid var(--rule);border-radius:2px;
+  font:400 12px/1.75 "JetBrains Mono",monospace;
+  padding:10px 12px;height:172px;overflow:auto;
+}
+.tape .row{display:flex;gap:9px;white-space:nowrap}
+.tape .row + .row{margin-top:2px}
+.chip{
+  flex:none;font-weight:700;font-variant-numeric:tabular-nums;
+  padding:0 5px;border-radius:2px;background:var(--sunk);color:var(--ink-3);
+}
+.chip.ok{background:var(--good-soft);color:var(--good)}
+.chip.err{background:var(--bad-soft);color:var(--bad)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.acc{background:var(--accent-soft);color:var(--accent)}
+.tape .txt{overflow:hidden;text-overflow:ellipsis;color:var(--ink-2)}
+.tape .empty{color:var(--ink-3)}
+
+/* ── deliberately-broken specimen ───────────────────────────────────── */
+.specimen{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
+@media (max-width:760px){.specimen{grid-template-columns:1fr}}
+.spec{background:var(--panel);border:1px solid var(--rule);border-radius:2px;padding:16px}
+.spec h4{font:600 14px/1.3 Archivo,sans-serif;margin:0 0 6px}
+.spec p{margin:0;font-size:14px;color:var(--ink-2)}
+.spec.off{padding:16px 16px 34px 30px}         /* the misaligned one — go on, report it */
+.spec .price{font:700 20px/1 "JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+/* deliberately wrong: the struck-out price outweighs the real one */
+.spec .price s{color:var(--ink-3);font-weight:400;font-size:25px;margin-right:7px}
+
+/* ── output sample ──────────────────────────────────────────────────── */
+.out{
+  background:var(--sunk);border:1px solid var(--rule);border-radius:2px;
+  padding:16px 18px;overflow-x:auto;
+  font:400 12.5px/1.75 "JetBrains Mono",monospace;white-space:pre;color:var(--ink-2);
+}
+.out b{color:var(--ink);font-weight:700}
+.out .q{color:var(--accent)}
+.out .e{color:var(--bad)}
+
+/* ── facts ──────────────────────────────────────────────────────────── */
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:26px 34px;margin-top:8px}
+@media (max-width:760px){.facts{grid-template-columns:1fr}}
+.fact h3{font-size:15.5px;font-weight:600;margin-bottom:6px;letter-spacing:-.01em}
+.fact p{margin:0;font-size:15px;color:var(--ink-2)}
+.fact code{font-size:12.5px;background:var(--accent-soft);color:var(--accent);padding:1px 5px;border-radius:2px}
+
+table{width:100%;border-collapse:collapse;font-size:14px;font-family:Archivo,sans-serif}
+.tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:2px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);white-space:nowrap}
+th{font:500 10.5px/1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:.09em;
+   color:var(--ink-3);background:var(--panel)}
+tr:last-child td{border-bottom:0}
+td code{font-size:12.5px;color:var(--accent)}
+td.d{color:var(--ink-2);white-space:normal;font-family:Newsreader,serif;font-size:15px}
+
+footer{padding:44px 0 70px;border-top:1px solid var(--rule);color:var(--ink-3);font-size:14px;
+       font-family:Archivo,sans-serif;display:flex;gap:16px;flex-wrap:wrap;justify-content:space-between}
 </style>
 </head>
+
 <body>
-<main>
-  <h1>supercomment demo</h1>
-  <p class="sub">Press <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> and click anything on this page.</p>
+<div class="wrap">
 
-  <div class="card" id="hero">
-    <h2>Pick this heading</h2>
-    <p>Any element works. The report carries its CSS selector, outerHTML, bounding box and text.</p>
+<header>
+  <div class="brand">
+    <h1>supercomment</h1>
+    <span class="ver mono">v0.1.0</span>
   </div>
+  <p class="thesis">Stop describing the bug. <em>Point at it.</em></p>
+  <p class="lead">
+    One script tag turns any page into something you can annotate. Click an element, type what's
+    wrong, and the report carries everything an agent needs to fix it — the selector and its HTML,
+    the console log, every network request, the uncaught errors, optionally a screenshot.
+  </p>
 
-  <div class="card">
-    <h2>Generate some context first</h2>
-    <p>Then send a report and see it all captured.</p>
-    <button onclick="noisyLogs()">Log some noise</button>
-    <button onclick="goodRequest()">Good request</button>
-    <button class="alt" onclick="badRequest()">Failing request</button>
-    <button class="alt" onclick="throwError()">Throw an error</button>
-  </div>
+  <div class="snippet"><span class="c">&lt;!-- first thing in &lt;head&gt; --&gt;</span>
+<span class="k">&lt;script</span> src=<span class="q">"/supercomment.js"</span> data-endpoint=<span class="q">"/report"</span><span class="k">&gt;&lt;/script&gt;</span></div>
 
-  <div class="card">
-    <h2>No endpoint? No problem.</h2>
-    <p>Without <code>data-endpoint</code> the report is copied to your clipboard as JSON,
-       so you can paste it straight into a chat with your agent.</p>
+  <div class="keyline">
+    <span class="status"><span class="led"></span><span id="live">library active on this page</span></span>
+    <span>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd> and click anything. On a phone, tap the 💬 button.</span>
   </div>
-</main>
+</header>
+
+<section id="try">
+  <div class="path mono">main &gt; section#try</div>
+  <h2 class="h3" style="font-size:26px;letter-spacing:-.02em;margin-bottom:8px">Break it, then watch the buffers fill</h2>
+  <p class="note" style="max-width:60ch">
+    The capture ring buffers are running right now — they started before this page's own scripts did.
+    That's the reason the script goes first in <code class="mono">&lt;head&gt;</code>: it catches the error that
+    happened <em>before</em> you decided to report it.
+  </p>
+
+  <div class="rig">
+    <div class="card">
+      <div class="h3">Generate some evidence</div>
+      <p class="note">Each button dirties a different buffer.</p>
+      <div class="btns">
+        <button class="act" onclick="noise()">Log some noise</button>
+        <button class="act" onclick="good()">Good request</button>
+        <button class="act bad" onclick="notFound()">404 a request</button>
+        <button class="act bad" onclick="boom()">Throw an error</button>
+        <button class="act bad" onclick="reject()">Reject a promise</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="meters">
+        <div class="meter"><span class="n" id="m-console">0</span><span class="l">console</span></div>
+        <div class="meter"><span class="n" id="m-network">0</span><span class="l">network</span></div>
+        <div class="meter" id="m-err-box"><span class="n" id="m-errors">0</span><span class="l">errors</span></div>
+      </div>
+      <div class="tape" id="tape"><div class="empty">buffers empty — press a button</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="specimen">
+  <div class="path mono">main &gt; section#specimen &gt; .spec</div>
+  <h2 class="h3" style="font-size:26px;letter-spacing:-.02em;margin-bottom:8px">Three cards, one of them wrong</h2>
+  <p class="note" style="max-width:60ch">
+    A realistic thing to report. The middle card's padding is off and its strikethrough price
+    is larger than the real one. Pick it, say so, and the agent gets
+    <code class="mono">div.spec.off &gt; .price</code> plus the exact HTML — no screenshot required.
+  </p>
+
+  <div class="specimen">
+    <div class="spec">
+      <h4>Starter</h4>
+      <p class="price">$0</p>
+      <p>Everything local, clipboard fallback.</p>
+    </div>
+    <div class="spec off">
+      <h4>Team</h4>
+      <p class="price"><s>$120</s>$19</p>
+      <p>Shared inbox, one report per teammate.</p>
+    </div>
+    <div class="spec">
+      <h4>Self-hosted</h4>
+      <p class="price">$0</p>
+      <p>Run the server next to your dev box.</p>
+    </div>
+  </div>
+</section>
+
+<section id="output">
+  <div class="path mono">.supercomment/&lt;id&gt;.md</div>
+  <h2 class="h3" style="font-size:26px;letter-spacing:-.02em;margin-bottom:8px">What lands on the other side</h2>
+  <p class="note" style="max-width:60ch">
+    The server writes each report twice — JSON for fidelity, and this, which is already the format
+    you'd want to paste into a chat. Send one and it shows up in the
+    <a href="inbox">inbox</a> within a second.
+  </p>
+
+  <div class="out"><b># Element comment — mt1hw9th-3rajzn</b>
+
+<span class="q">&gt; The middle card's padding is off and the old price is too big.</span>
+
+<b>## Element</b>
+- <b>Selector:</b> `div.spec.off &gt; .price`
+- <b>Rect:</b> x=339 y=161 602x24
+
+<b>## Errors (1)</b>
+<span class="e">[error] Uncaught TypeError: Cannot read properties of null</span>
+<span class="e">  at https://example.dev/app.js:61:55</span>
+
+<b>## Network (2 requests, 1 failed)</b>
+200 GET    /api/pricing            (41ms)
+<span class="e">404 GET    /api/pricing/discount   (11ms)</span>
+       body: {"error":"not found"}
+
+<b>## Console (3)</b>
+WARN  deprecated prop "size" used on &lt;Button&gt;
+LOG   cart total recalculated {"items":3,"total":41.5}</div>
+</section>
+
+<section id="how">
+  <div class="path mono">main &gt; section#how</div>
+  <h2 class="h3" style="font-size:26px;letter-spacing:-.02em;margin-bottom:22px">Four decisions worth knowing</h2>
+  <div class="facts">
+    <div class="fact">
+      <h3>It loads first, deliberately</h3>
+      <p>Console, <code>fetch</code>, <code>XMLHttpRequest</code>, <code>onerror</code> and unhandled
+         rejections are wrapped at parse time. Put the tag anywhere else and you only capture what
+         happened after it.</p>
+    </div>
+    <div class="fact">
+      <h3>Fixed-size ring buffers</h3>
+      <p>200 console lines, 100 requests, 50 errors by default. A page left open all afternoon
+         doesn't grow memory, and the report stays small enough to read.</p>
+    </div>
+    <div class="fact">
+      <h3>The UI can't collide with yours</h3>
+      <p>Everything lives in a shadow root, so your CSS can't reach into the panel and the panel
+         can't leak into your page. No reset, no <code>!important</code> war.</p>
+    </div>
+    <div class="fact">
+      <h3>No endpoint? Still useful</h3>
+      <p>Without <code>data-endpoint</code> the report is copied to your clipboard as JSON,
+         ready to paste into a chat. The backend is an optimization, not a requirement.</p>
+    </div>
+  </div>
+</section>
+
+<section id="config">
+  <div class="path mono">script[data-*]</div>
+  <h2 class="h3" style="font-size:26px;letter-spacing:-.02em;margin-bottom:8px">Configuration</h2>
+  <p class="note" style="max-width:60ch">All optional, all on the script tag. Or set
+     <code class="mono">window.SUPERCOMMENT_CONFIG</code> before it loads.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Attribute</th><th>Default</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>data-endpoint</code></td><td><code>null</code></td><td class="d">Where to POST. Unset means clipboard fallback.</td></tr>
+        <tr><td><code>data-hotkey</code></td><td><code>ctrl+shift+k</code></td><td class="d">Element picker. <code>ctrl</code> also matches ⌘.</td></tr>
+        <tr><td><code>data-pagehotkey</code></td><td><code>ctrl+shift+u</code></td><td class="d">Page-level report, no element.</td></tr>
+        <tr><td><code>data-bodies</code></td><td><code>errors</code></td><td class="d">Response bodies: errors / always / never.</td></tr>
+        <tr><td><code>data-screenshot</code></td><td><code>ask</code></td><td class="d">ask / on / off. Uses getDisplayMedia.</td></tr>
+        <tr><td><code>data-maxlogs</code></td><td><code>200</code></td><td class="d">Console ring-buffer size.</td></tr>
+        <tr><td><code>data-button</code></td><td><code>true</code></td><td class="d">The floating launcher. Your only way in on mobile.</td></tr>
+        <tr><td><code>data-theme</code></td><td><code>dark</code></td><td class="d">Panel appearance: dark or light.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <span>MIT · zero dependencies · <span class="mono">npx supercomment</span></span>
+  <span><a href="inbox">Open the inbox →</a></span>
+</footer>
+
+</div>
 
 <script>
-function noisyLogs() {
-  console.log('user clicked the noise button', { at: Date.now() });
-  console.info('cart total recalculated', { items: 3, total: 41.5 });
+/* ── demo noise generators ───────────────────────────────────────────── */
+function noise(){
+  console.log('cart recalculated', {items:3, total:41.5});
+  console.info('pricing experiment bucket', 'B');
   console.warn('deprecated prop "size" used on <Button>');
 }
-function goodRequest() { fetch('/reports').then(r => r.json()).then(d => console.log('got', d.length, 'reports')); }
-function badRequest() { fetch('/definitely-not-here').then(r => console.log('status', r.status)); }
-function throwError() { setTimeout(function () { null.oops(); }, 0); }
+function good(){ fetch('reports').then(function(r){return r.json()}).then(function(d){ console.log('inbox holds', d.length, 'reports'); }); }
+function notFound(){ fetch('api/pricing/discount').then(function(r){ console.log('discount lookup status', r.status); }); }
+function boom(){ setTimeout(function(){ var cfg = null; cfg.pricing.render(); }, 0); }
+function reject(){ Promise.reject(new Error('checkout session expired')); }
+
+/* ── live buffer readout ─────────────────────────────────────────────── */
+var tape = document.getElementById('tape');
+
+function chipFor(n){
+  if (n.status == null) return 'warn';
+  return n.ok ? 'ok' : 'err';
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+function paint(){
+  if (!window.supercomment) return;
+  var s = window.supercomment.snapshot();
+
+  document.getElementById('m-console').textContent = s.console.length;
+  document.getElementById('m-network').textContent = s.network.length;
+  document.getElementById('m-errors').textContent = s.errors.length;
+  document.getElementById('m-err-box').className = 'meter' + (s.errors.length ? ' hot' : '');
+
+  var rows = [];
+  s.errors.slice(-4).forEach(function(e){
+    rows.push({ t: e.t, chip:'err', label:'ERR', txt: e.message });
+  });
+  s.network.slice(-6).forEach(function(n){
+    rows.push({ t:n.t, chip:chipFor(n), label:(n.status == null ? '···' : n.status), txt:n.method + ' ' + n.url });
+  });
+  s.console.slice(-6).forEach(function(c){
+    rows.push({ t:c.t, chip:(c.level==='error'?'err':c.level==='warn'?'warn':'acc'),
+                label:c.level.slice(0,4).toUpperCase(), txt:c.text });
+  });
+
+  if (!rows.length){ tape.innerHTML = '<div class="empty">buffers empty — press a button</div>'; return; }
+  rows.sort(function(a,b){ return a.t - b.t; });
+  tape.innerHTML = rows.slice(-14).map(function(r){
+    return '<div class="row"><span class="chip ' + r.chip + '">' + esc(r.label) + '</span>'
+         + '<span class="txt">' + esc(r.txt) + '</span></div>';
+  }).join('');
+  tape.scrollTop = tape.scrollHeight;
+}
+
+setInterval(paint, 700);
+paint();
+
+/* honest status line — say what's actually true */
+window.addEventListener('load', function(){
+  var el = document.getElementById('live');
+  if (!window.supercomment) { el.textContent = 'library failed to load'; return; }
+  el.textContent = window.supercomment.config.endpoint
+    ? 'capturing → ' + window.supercomment.config.endpoint
+    : 'capturing → clipboard';
+});
 </script>
 </body>
 </html>

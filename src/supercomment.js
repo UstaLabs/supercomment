@@ -385,20 +385,39 @@
         })
         .slice(0, 2);
       if (cls.length) sel += '.' + cls.map(esc).join('.');
-      var sib = node,
-        nth = 1;
-      while ((sib = sib.previousElementSibling)) if (sib.nodeName === node.nodeName) nth++;
-      var sameName = node.parentElement
-        ? node.parentElement.children.length > 1 &&
-          Array.prototype.filter.call(node.parentElement.children, function (c) {
-            return c.nodeName === node.nodeName;
-          }).length > 1
-        : false;
-      if (sameName) sel += ':nth-of-type(' + nth + ')';
+
+      // Only disambiguate with :nth-of-type when tag+class isn't already
+      // unique among siblings — an unconditional index makes every selector
+      // unreadable for the human and the agent reading the report.
+      var parent = node.parentElement;
+      if (parent) {
+        var ambiguous = true;
+        try {
+          ambiguous = parent.querySelectorAll(':scope > ' + sel).length > 1;
+        } catch (_) {
+          ambiguous = true;
+        }
+        if (ambiguous) {
+          var sib = node,
+            nth = 1;
+          while ((sib = sib.previousElementSibling)) if (sib.nodeName === node.nodeName) nth++;
+          sel += ':nth-of-type(' + nth + ')';
+        }
+      }
       path.unshift(sel);
-      node = node.parentElement;
+      node = parent;
     }
-    return path.join(' > ');
+
+    var out = path.join(' > ');
+    // A selector that doesn't resolve back to this element is worse than a
+    // vague one — fall back to something honest.
+    try {
+      if (document.querySelector(out) !== el) {
+        var alt = el.id ? el.nodeName.toLowerCase() + '#' + esc(el.id) : null;
+        if (alt && document.querySelector(alt) === el) return alt;
+      }
+    } catch (_) {}
+    return out;
   }
 
   function describeElement(el) {
